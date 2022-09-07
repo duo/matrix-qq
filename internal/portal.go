@@ -144,7 +144,7 @@ func (p *Portal) handleQQMessageLoopItem(msg PortalMessage) {
 			return
 		}
 		p.log.Debugln("Creating Matrix room from incoming message")
-		err := p.CreateMatrixRoom(msg.source, nil, false, true)
+		err := p.CreateMatrixRoom(msg.source, nil, false)
 		if err != nil {
 			p.log.Errorln("Failed to create portal room:", err)
 
@@ -722,7 +722,7 @@ func (p *Portal) kickExtraUsers(participantMap map[types.UID]bool) {
 	}
 }
 
-func (p *Portal) SyncParticipants(source *User, metadata *client.GroupInfo) {
+func (p *Portal) SyncParticipants(source *User, metadata *client.GroupInfo, forceAvatarSync bool) {
 	changed := false
 	levels, err := p.MainIntent().PowerLevels(p.MXID)
 	if err != nil {
@@ -736,7 +736,7 @@ func (p *Portal) SyncParticipants(source *User, metadata *client.GroupInfo) {
 		uid := types.NewIntUserUID(participant.Uin)
 		participantMap[uid] = true
 		puppet := p.bridge.GetPuppetByUID(uid)
-		puppet.SyncContact(source, true, "group participant")
+		puppet.SyncContact(source, forceAvatarSync, "group participant")
 		user := p.bridge.GetUserByUID(uid)
 		if user != nil && user != source {
 			p.ensureUserInvited(user)
@@ -871,7 +871,7 @@ func (p *Portal) UpdateTopic(topic string, setBy types.UID, updateInfo bool) boo
 	return false
 }
 
-func (p *Portal) UpdateMetadata(user *User, groupInfo *client.GroupInfo) bool {
+func (p *Portal) UpdateMetadata(user *User, groupInfo *client.GroupInfo, forceAvatarSync bool) bool {
 	if p.IsPrivateChat() {
 		return false
 	}
@@ -881,7 +881,7 @@ func (p *Portal) UpdateMetadata(user *User, groupInfo *client.GroupInfo) bool {
 		return false
 	}
 
-	p.SyncParticipants(user, groupInfo)
+	p.SyncParticipants(user, groupInfo, forceAvatarSync)
 	update := false
 	update = p.UpdateName(groupInfo.Name, types.EmptyUID, false) || update
 	//update = p.UpdateTopic(groupInfo.Topic, types.EmptyUID, false) || update
@@ -895,7 +895,7 @@ func (p *Portal) ensureUserInvited(user *User) bool {
 	return user.ensureInvited(p.MainIntent(), p.MXID, p.IsPrivateChat())
 }
 
-func (p *Portal) UpdateMatrixRoom(user *User, groupInfo *client.GroupInfo) bool {
+func (p *Portal) UpdateMatrixRoom(user *User, groupInfo *client.GroupInfo, forceAvatarSync bool) bool {
 	if len(p.MXID) == 0 {
 		return false
 	}
@@ -905,7 +905,7 @@ func (p *Portal) UpdateMatrixRoom(user *User, groupInfo *client.GroupInfo) bool 
 	go p.addToSpace(user)
 
 	update := false
-	update = p.UpdateMetadata(user, groupInfo) || update
+	update = p.UpdateMetadata(user, groupInfo, forceAvatarSync) || update
 	if !p.IsPrivateChat() {
 		update = p.UpdateAvatar(user, types.EmptyUID, false) || update
 	}
@@ -1089,7 +1089,7 @@ func (p *Portal) GetEncryptionEventContent() (evt *event.EncryptionEventContent)
 	return
 }
 
-func (p *Portal) CreateMatrixRoom(user *User, groupInfo *client.GroupInfo, isFullInfo, backfill bool) error {
+func (p *Portal) CreateMatrixRoom(user *User, groupInfo *client.GroupInfo, isFullInfo bool) error {
 	if len(p.MXID) > 0 {
 		return nil
 	}
@@ -1206,7 +1206,6 @@ func (p *Portal) CreateMatrixRoom(user *User, groupInfo *client.GroupInfo, isFul
 	p.Update(nil)
 	p.log.Infoln("Matrix room created:", p.MXID)
 
-	// We set the memberships beforehand to make sure the encryption key exchange in initial backfill knows the users are here.
 	for _, userID := range invite {
 		p.bridge.StateStore.SetMembership(p.MXID, userID, event.MembershipInvite)
 	}
@@ -1217,7 +1216,7 @@ func (p *Portal) CreateMatrixRoom(user *User, groupInfo *client.GroupInfo, isFul
 	go p.addToSpace(user)
 
 	if groupInfo != nil {
-		p.SyncParticipants(user, groupInfo)
+		p.SyncParticipants(user, groupInfo, true)
 		// TODO: restrict message sending and changes
 	}
 	if p.IsPrivateChat() {

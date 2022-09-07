@@ -171,7 +171,7 @@ func (u *User) doPuppetResync() {
 			} else {
 				groupInfo.Members = m
 				u.log.Debugfln("Doing background sync for %s", portal.Key.UID)
-				portal.UpdateMatrixRoom(u, groupInfo)
+				portal.UpdateMatrixRoom(u, groupInfo, false)
 			}
 		} else {
 			u.log.Warnfln("Failed to get group info for %s to do background sync", portal.Key.UID)
@@ -628,12 +628,12 @@ func (u *User) ResyncGroups(createPortals bool) error {
 		portal := u.GetPortalByUID(uid)
 		if len(portal.MXID) == 0 {
 			if createPortals {
-				if err := portal.CreateMatrixRoom(u, group, true, true); err != nil {
+				if err := portal.CreateMatrixRoom(u, group, true); err != nil {
 					return fmt.Errorf("failed to create room for %s: %v", uid, err)
 				}
 			}
 		} else {
-			portal.UpdateMatrixRoom(u, group)
+			portal.UpdateMatrixRoom(u, group, true)
 		}
 	}
 
@@ -654,7 +654,7 @@ func (u *User) StartPM(uid types.UID, reason string) (*Portal, *Puppet, bool, er
 			return portal, puppet, false, nil
 		}
 	}
-	err := portal.CreateMatrixRoom(u, nil, false, true)
+	err := portal.CreateMatrixRoom(u, nil, false)
 
 	return portal, puppet, true, err
 }
@@ -702,12 +702,12 @@ func (u *User) handleGroupJoin(c *client.QQClient, e *client.GroupInvitedRequest
 		}
 		groupInfo.Members = m
 		if len(portal.MXID) == 0 {
-			err := portal.CreateMatrixRoom(u, groupInfo, true, true)
+			err := portal.CreateMatrixRoom(u, groupInfo, true)
 			if err != nil {
 				u.log.Errorln("Failed to create Matrix room after join notification: %v", err)
 			}
 		} else {
-			portal.UpdateMatrixRoom(u, groupInfo)
+			portal.UpdateMatrixRoom(u, groupInfo, true)
 		}
 	}
 }

@@ -7,7 +7,7 @@ All setup and usage instructions can refer to [docs.mau.fi]. Some quick links:
 
 [docs.mau.fi]: https://docs.mau.fi/bridges/go/whatsapp/index.html
 
-* [Bridge setup](https://docs.mau.fi/bridges/go/setup.html?bridge=whatsapp)
+* [Bridge setup](https://docs.mau.fi/bridges/go/setup.html)
 * Basic usage: [Authentication](https://docs.mau.fi/bridges/go/whatsapp/authentication.html)
 
 ### Features & roadmap
