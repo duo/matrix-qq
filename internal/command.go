@@ -9,8 +9,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/duo/matrix-qq/internal/types"
+	"github.com/tidwall/gjson"
 
 	"github.com/Mrs4s/MiraiGo/client"
 	"golang.org/x/image/draw"
@@ -31,7 +33,9 @@ type WrappedCommandEvent struct {
 func (br *QQBridge) RegisterCommands() {
 	proc := br.CommandProcessor.(*commands.Processor)
 	proc.AddHandlers(
-		cmdLogin,
+		cmdLoginPassword,
+		cmdLoginQR,
+		cmdLoginToken,
 		cmdLogout,
 		cmdDeleteSession,
 		cmdReconnect,
@@ -47,6 +51,19 @@ func (br *QQBridge) RegisterCommands() {
 }
 
 func wrapCommand(handler func(*WrappedCommandEvent)) func(*commands.Event) {
+	return func(ce *commands.Event) {
+		user := ce.User.(*User)
+		user.SetCommandState(nil)
+		var portal *Portal
+		if ce.Portal != nil {
+			portal = ce.Portal.(*Portal)
+		}
+		br := ce.Bridge.Child.(*QQBridge)
+		handler(&WrappedCommandEvent{ce, br, user, portal})
+	}
+}
+
+func wrapInputCommand(handler func(*WrappedCommandEvent)) func(*commands.Event) {
 	return func(ce *commands.Event) {
 		user := ce.User.(*User)
 		var portal *Portal
@@ -66,26 +83,169 @@ var (
 	HelpSectionMiscellaneous        = commands.HelpSection{Name: "Miscellaneous", Order: 30}
 )
 
-var cmdLogin = &commands.FullHandler{
-	Func: wrapCommand(fnLogin),
-	Name: "login",
+var cmdLoginPassword = &commands.FullHandler{
+	Func: wrapCommand(fnLoginPassword),
+	Name: "login-password",
 	Help: commands.HelpMeta{
 		Section:     commands.HelpSectionAuth,
 		Description: "Link the bridge to your QQ account.",
+		Args:        "<id> <password>",
 	},
 }
 
-func fnLogin(ce *WrappedCommandEvent) {
+func fnLoginPassword(ce *WrappedCommandEvent) {
+	if len(ce.Args) != 2 {
+		ce.Reply("**Usage**: $cmdprefix login-password <id> <password>")
+		return
+	}
+
 	if ce.User.Token != nil {
 		if ce.User.IsLoggedIn() {
-			ce.Reply("You're already logged in")
+			ce.Reply("You're already logged in.")
 		} else {
 			ce.Reply("You're already logged in. Perhaps you wanted to `reconnect`?")
 		}
 		return
 	}
 
-	qrChan, err := ce.User.Login()
+	uin, err := strconv.ParseInt(ce.Args[0], 10, 64)
+	if err != nil {
+		ce.Reply("QQ number invalid: %v", err)
+		return
+	}
+
+	res, err := ce.User.LoginPassword(uin, ce.Args[1])
+	for {
+		if err != nil {
+			ce.Reply("Failed to log in: %v", err)
+			return
+		}
+		if res.Success {
+			ce.Reply("Login successful.")
+			return
+		}
+
+		switch res.Error {
+		case client.SliderNeededError:
+			ticket := getTicket(ce, res.VerifyUrl)
+			res, err = ce.User.Client.SubmitTicket(ticket)
+			if err != nil {
+				ce.Reply("Failed to log in: %v", err)
+				return
+			}
+			if res.Success {
+				ce.Reply("Login successful.")
+				return
+			}
+		case client.NeedCaptcha:
+			ce.User.sendQR(ce, res.CaptchaImage, "")
+			ce.Reply("Please input captcha.")
+			switchInput(ce, "captcha", res.CaptchaSign)
+			return
+		case client.SMSNeededError, client.SMSOrVerifyNeededError:
+			if !ce.User.Client.RequestSMS() {
+				ce.Reply("Failed to send verify code to " + res.SMSPhone)
+			} else {
+				ce.Reply("Please input verify code.")
+				switchInput(ce, "verify", nil)
+			}
+			return
+		case client.UnsafeDeviceError:
+			ce.Reply("Device locked, please verify from " + res.VerifyUrl)
+			return
+		case client.OtherLoginError, client.UnknownLoginError, client.TooManySMSRequestError:
+			ce.Reply("Failed to log in: %d %v", res.Error, res.ErrorMessage)
+			return
+		}
+	}
+}
+
+func getTicket(ce *WrappedCommandEvent, u string) (str string) {
+	id := RandomString(8)
+	replyInfo := fmt.Sprintf("Go to %s for verification.", strings.ReplaceAll(u, "https://ssl.captcha.qq.com/template/wireless_mqq_captcha.html?", fmt.Sprintf("https://captcha.go-cqhttp.org/captcha?id=%v&", id)))
+	ce.Reply(replyInfo)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for count := 120; count > 0; count-- {
+		<-ticker.C
+		str = fetchCaptcha(id)
+		if str != "" {
+			return
+		}
+	}
+	return ""
+}
+
+func fetchCaptcha(id string) string {
+	data, err := GetBytes("https://captcha.go-cqhttp.org/captcha/ticket?id=" + id)
+	if err != nil {
+		// Failed to fetch ticker
+		return ""
+	}
+	g := gjson.ParseBytes(data)
+	if g.Get("ticket").Exists() {
+		return g.Get("ticket").String()
+	}
+	return ""
+}
+
+func switchInput(ce *WrappedCommandEvent, action string, meta interface{}) {
+	ce.User.SetCommandState(&commands.CommandState{
+		Action: action,
+		Meta:   meta,
+		Next: &commands.FullHandler{
+			Func: wrapInputCommand(getInput),
+		},
+	})
+}
+
+func getInput(ce *WrappedCommandEvent) {
+	ce.User.log.Infoln(ce.Args)
+
+	state := ce.User.GetCommandState()
+	ce.User.SetCommandState(nil)
+
+	var res *client.LoginResponse
+	var err error
+
+	switch state.Action {
+	case "captcha":
+		res, err = ce.User.Client.SubmitCaptcha(ce.Args[0], state.Meta.([]byte))
+	case "verify":
+		res, err = ce.User.Client.SubmitSMS(ce.Args[0])
+	default:
+		err = fmt.Errorf("unknow action %s", state.Action)
+	}
+
+	if err != nil {
+		ce.Reply("Failed to log in: %v", err)
+	} else if res.Success {
+		ce.Reply("Login successful.")
+	} else {
+		ce.Reply("Failed to log in: %d %v", res.Error, res.ErrorMessage)
+	}
+}
+
+var cmdLoginQR = &commands.FullHandler{
+	Func: wrapCommand(fnLoginQR),
+	Name: "login-qr",
+	Help: commands.HelpMeta{
+		Section:     commands.HelpSectionAuth,
+		Description: "Link the bridge to your QQ account.",
+	},
+}
+
+func fnLoginQR(ce *WrappedCommandEvent) {
+	if ce.User.Token != nil {
+		if ce.User.IsLoggedIn() {
+			ce.Reply("You're already logged in.")
+		} else {
+			ce.Reply("You're already logged in. Perhaps you wanted to `reconnect`?")
+		}
+		return
+	}
+
+	qrChan, err := ce.User.LoginQR()
 	if err != nil {
 		ce.User.log.Errorf("Failed to log in:", err)
 		ce.Reply("Failed to log in: %v", err)
@@ -164,6 +324,40 @@ func (user *User) uploadQR(ce *WrappedCommandEvent, qrCode []byte) (id.ContentUR
 		return id.ContentURI{}, false
 	}
 	return resp.ContentURI, true
+}
+
+var cmdLoginToken = &commands.FullHandler{
+	Func: wrapCommand(fnLoginToken),
+	Name: "login-token",
+	Help: commands.HelpMeta{
+		Section:     commands.HelpSectionAuth,
+		Description: "Link the bridge to your QQ account.",
+		Args:        "<device> <token>",
+	},
+}
+
+func fnLoginToken(ce *WrappedCommandEvent) {
+	if len(ce.Args) != 2 {
+		ce.Reply("**Usage**: $cmdprefix login-token <device> <token>")
+		return
+	}
+
+	if ce.User.Token != nil {
+		if ce.User.IsLoggedIn() {
+			ce.Reply("You're already logged in.")
+		} else {
+			ce.Reply("You're already logged in. Perhaps you wanted to `reconnect`?")
+		}
+		return
+	}
+
+	err := ce.User.LoginToken(ce.Args[0], ce.Args[1])
+	if err != nil {
+		ce.User.log.Errorf("Failed to log in:", err)
+		ce.Reply("Failed to log in: %v", err)
+	} else {
+		ce.Reply("Login successful.")
+	}
 }
 
 var cmdLogout = &commands.FullHandler{

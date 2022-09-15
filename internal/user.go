@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"crypto/md5"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -18,6 +20,7 @@ import (
 	"maunium.net/go/mautrix/appservice"
 	"maunium.net/go/mautrix/bridge"
 	"maunium.net/go/mautrix/bridge/bridgeconfig"
+	"maunium.net/go/mautrix/bridge/commands"
 	"maunium.net/go/mautrix/bridge/status"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -28,6 +31,7 @@ import (
 const (
 	resyncMinInterval  = 7 * 24 * time.Hour
 	resyncLoopInterval = 4 * time.Hour
+	emptyAvatar        = "acef72340ac0e914090bd35799f5594e"
 )
 
 var (
@@ -65,6 +69,8 @@ type User struct {
 	resyncQueue     map[types.UID]resyncQueueItem
 	resyncQueueLock sync.Mutex
 	nextResync      time.Time
+
+	commadnState *commands.CommandState
 }
 
 func (u *User) GetPermissionLevel() bridgeconfig.PermissionLevel {
@@ -79,8 +85,12 @@ func (u *User) GetMXID() id.UserID {
 	return u.MXID
 }
 
-func (u *User) GetCommandState() map[string]interface{} {
-	return nil
+func (u *User) SetCommandState(s *commands.CommandState) {
+	u.commadnState = s
+}
+
+func (u *User) GetCommandState() *commands.CommandState {
+	return u.commadnState
 }
 
 func (u *User) addToUIDMap() {
@@ -393,7 +403,66 @@ func (u *User) createClient() {
 	})
 }
 
-func (u *User) Login() (<-chan *client.QRCodeLoginResponse, error) {
+func (u *User) LoginPassword(uin int64, password string) (*client.LoginResponse, error) {
+	u.connLock.Lock()
+	defer u.connLock.Unlock()
+
+	if u.IsLoggedIn() {
+		return nil, ErrAlreadyLoggedIn
+	} else if u.Client != nil {
+		u.unlockedDeleteConnection()
+	}
+
+	u.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnecting, Error: QQConnecting})
+	u.createClient()
+
+	u.Client.Uin = uin
+	u.Client.PasswordMd5 = md5.Sum([]byte(password))
+
+	ret, err := u.Client.Login()
+	if err != nil {
+		return nil, err
+	}
+
+	return ret, nil
+}
+
+func (u *User) LoginToken(encodedDevice, encodedToken string) error {
+	u.connLock.Lock()
+	defer u.connLock.Unlock()
+
+	if u.IsLoggedIn() {
+		return ErrAlreadyLoggedIn
+	} else if u.Client != nil {
+		u.unlockedDeleteConnection()
+	}
+
+	deviceBytes, err := base64.StdEncoding.DecodeString(encodedDevice)
+	if err != nil {
+		return err
+	}
+	tokenBytes, err := base64.StdEncoding.DecodeString(encodedToken)
+	if err != nil {
+		return err
+	}
+
+	u.Device = string(deviceBytes)
+	u.Token = tokenBytes
+
+	u.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnecting, Error: QQConnecting})
+	u.createClient()
+
+	if err := u.Client.TokenLogin(u.Token); err != nil {
+		u.failedConnect(err)
+		return err
+	}
+
+	u.MarkLogin()
+
+	return nil
+}
+
+func (u *User) LoginQR() (<-chan *client.QRCodeLoginResponse, error) {
 	u.connLock.Lock()
 	defer u.connLock.Unlock()
 
@@ -440,15 +509,7 @@ func (u *User) Login() (<-chan *client.QRCodeLoginResponse, error) {
 					qrChan <- &client.QRCodeLoginResponse{State: 0}
 					close(qrChan)
 				} else {
-					u.UID = types.NewIntUserUID(u.Client.Uin)
-					u.Device = string(client.SystemDeviceInfo.ToJson())
-					u.Token = u.Client.GenToken()
-					u.addToUIDMap()
-					u.Update()
-
-					go u.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnected})
-					go u.tryAutomaticDoublePuppeting()
-
+					u.MarkLogin()
 					close(qrChan)
 				}
 				return
@@ -457,6 +518,17 @@ func (u *User) Login() (<-chan *client.QRCodeLoginResponse, error) {
 	}()
 
 	return qrChan, nil
+}
+
+func (u *User) MarkLogin() {
+	u.UID = types.NewIntUserUID(u.Client.Uin)
+	u.Device = string(client.SystemDeviceInfo.ToJson())
+	u.Token = u.Client.GenToken()
+	u.addToUIDMap()
+	u.Update()
+
+	go u.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnected})
+	go u.tryAutomaticDoublePuppeting()
 }
 
 func (u *User) Connect() bool {
@@ -762,15 +834,21 @@ func (u *User) handleFriendRecalled(c *client.QQClient, e *client.FriendMessageR
 	// TODO:
 }
 
-func (user *User) updateAvatar(uid types.UID, avatarID *string, avatarURL *id.ContentURI, avatarSet *bool, log log.Logger, intent *appservice.IntentAPI) bool {
-	var url string
+func (u *User) updateAvatar(uid types.UID, avatarID *string, avatarURL *id.ContentURI, avatarSet *bool, log log.Logger, intent *appservice.IntentAPI) bool {
+	var data []byte
+	var err error
 	if uid.IsUser() {
-		url = fmt.Sprintf("https://q.qlogo.cn/headimg_dl?dst_uin=%s&spec=0", uid.Uin)
+		data, err = downloadUserAvatar(u, uid.Uin)
 	} else {
-		url = fmt.Sprintf("https://p.qlogo.cn/gh/%s/%s/0", uid.Uin, uid.Uin)
+		data, err = downloadGroupAvatar(uid.Uin)
 	}
 
-	resp, err := reuploadAvatar(intent, url)
+	if err != nil {
+		log.Warnln("Failed to download avatar:", err)
+		return false
+	}
+
+	resp, err := reuploadAvatar(intent, data)
 	if err != nil {
 		log.Warnln("Failed to reupload avatar:", err)
 		return false
@@ -781,6 +859,26 @@ func (user *User) updateAvatar(uid types.UID, avatarID *string, avatarURL *id.Co
 	*avatarSet = false
 
 	return true
+}
+
+func downloadUserAvatar(user *User, uin string) (data []byte, err error) {
+	avatarSizes := []int{0, 640, 140, 100, 41, 40}
+
+	for _, size := range avatarSizes {
+		url := fmt.Sprintf("https://q.qlogo.cn/headimg_dl?dst_uin=%s&spec=%d", uin, size)
+		data, err = GetBytes(url)
+		if err != nil || fmt.Sprintf("%x", md5.Sum(data)) == emptyAvatar {
+			continue
+		} else {
+			break
+		}
+	}
+	return
+}
+
+func downloadGroupAvatar(uin string) ([]byte, error) {
+	url := fmt.Sprintf("https://p.qlogo.cn/gh/%s/%s/0", uin, uin)
+	return GetBytes(url)
 }
 
 // ChildOverride

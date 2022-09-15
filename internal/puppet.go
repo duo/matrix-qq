@@ -334,12 +334,7 @@ func (br *QQBridge) NewPuppet(dbPuppet *database.Puppet) *Puppet {
 	}
 }
 
-func reuploadAvatar(intent *appservice.IntentAPI, url string) (id.ContentURI, error) {
-	data, err := GetBytes(url)
-	if err != nil {
-		return id.ContentURI{}, fmt.Errorf("failed to download avatar: %w", err)
-	}
-
+func reuploadAvatar(intent *appservice.IntentAPI, data []byte) (id.ContentURI, error) {
 	mime := http.DetectContentType(data)
 	resp, err := intent.UploadBytes(data, mime)
 	if err != nil {
