@@ -148,7 +148,7 @@ func fnLoginPassword(ce *WrappedCommandEvent) {
 			if !ce.User.Client.RequestSMS() {
 				ce.Reply("Failed to send verify code to " + res.SMSPhone)
 			} else {
-				ce.Reply("Please input verify code.")
+				ce.Reply("Verify code has been sent to %s, please input.", res.SMSPhone)
 				switchInput(ce, "verify", nil)
 			}
 			return

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -135,6 +136,13 @@ func (p *Portal) GetUsers() []*User {
 }
 
 func (p *Portal) handleQQMessageLoopItem(msg PortalMessage) {
+	defer func() {
+		panicErr := recover()
+		if panicErr != nil {
+			p.log.Warnfln("Panic while process %+v: %v\n%s", msg, panicErr, debug.Stack())
+		}
+	}()
+
 	if len(p.MXID) == 0 {
 		if (msg.fake == nil && msg.private == nil && msg.group == nil && msg.temp == nil && msg.offline == nil) ||
 			(msg.private != nil && !containsSupportedMessage(msg.private.Elements)) ||
@@ -164,6 +172,13 @@ func (p *Portal) handleQQMessageLoopItem(msg PortalMessage) {
 }
 
 func (p *Portal) handleMatrixMessageLoopItem(msg PortalMatrixMessage) {
+	defer func() {
+		panicErr := recover()
+		if panicErr != nil {
+			p.log.Warnfln("Panic while process %+v: %v\n%s", msg, panicErr, debug.Stack())
+		}
+	}()
+
 	switch msg.evt.Type {
 	case event.EventMessage, event.EventSticker:
 		p.HandleMatrixMessage(msg.user, msg.evt)
@@ -394,6 +409,29 @@ func (p *Portal) convertQQVoice(source *User, msgID string, elem *message.VoiceE
 	return converted
 }
 
+func (p *Portal) convertQQLocation(source *User, msgID string, elem *message.LightAppElement, intent *appservice.IntentAPI) *ConvertedMessage {
+	name := gjson.Get(elem.Content, "meta.*.name").String()
+	address := gjson.Get(elem.Content, "meta.*.address").String()
+	latitude := gjson.Get(elem.Content, "meta.*.lat").Float()
+	longitude := gjson.Get(elem.Content, "meta.*.lng").Float()
+
+	url := fmt.Sprintf("https://maps.google.com/?q=%.5f,%.5f", latitude, longitude)
+
+	content := &event.MessageEventContent{
+		MsgType:       event.MsgLocation,
+		Body:          fmt.Sprintf("Location: %s\n%s\n%s", name, address, url),
+		Format:        event.FormatHTML,
+		FormattedBody: fmt.Sprintf("Location: <a href='%s'>%s</a><br>%s", url, name, address),
+		GeoURI:        fmt.Sprintf("geo:%.5f,%.5f", latitude, longitude),
+	}
+
+	return &ConvertedMessage{
+		Intent:  intent,
+		Type:    event.EventMessage,
+		Content: content,
+	}
+}
+
 func (p *Portal) convertQQImage(source *User, msgID string, url string, intent *appservice.IntentAPI) *ConvertedMessage {
 	content := &event.MessageEventContent{
 		MsgType: event.MsgImage,
@@ -461,9 +499,15 @@ func (p *Portal) renderQQLightApp(elem *message.LightAppElement) string {
 	title := gjson.Get(elem.Content, "meta.*.title").String()
 	desc := gjson.Get(elem.Content, "meta.*.desc").String()
 	url := gjson.Get(elem.Content, "meta.*.qqdocurl").String()
+	jumpUrl := gjson.Get(elem.Content, "meta.*.jumpUrl").String()
 	if len(url) > 0 {
-		return fmt.Sprintf("[%s](%s)\n%s", title, url, desc)
+		return fmt.Sprintf("%s\n\nvia [%s](%s)", desc, title, url)
 	}
+	if len(jumpUrl) > 0 {
+		tag := gjson.Get(elem.Content, "meta.*.tag").String()
+		return fmt.Sprintf("**%s**\n\n%s\n\nvia [%s](%s)", title, desc, tag, jumpUrl)
+	}
+
 	return elem.Content
 }
 
@@ -573,8 +617,13 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 					Sender:    types.NewIntUserUID(v.Sender),
 				}
 			case *message.LightAppElement:
-				summary = append(summary, p.renderQQLightApp(v))
-				isRichFormat = true
+				view := getAppView(v)
+				if view == "LocationShare" {
+					converted = p.convertQQLocation(source, msgID, v, intent)
+				} else {
+					summary = append(summary, p.renderQQLightApp(v))
+					isRichFormat = true
+				}
 			}
 		}
 	}
@@ -1880,6 +1929,10 @@ func (br *QQBridge) NewPortal(dbPortal *database.Portal) *Portal {
 	portal.Portal = dbPortal
 
 	return portal
+}
+
+func getAppView(elem *message.LightAppElement) string {
+	return gjson.Get(elem.Content, "view").String()
 }
 
 func download(url string) ([]byte, *mimetype.MIME, error) {

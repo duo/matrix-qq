@@ -52,7 +52,7 @@ All setup and usage instructions can refer to [docs.mau.fi]. Some quick links:
     * [x] File
     * [x] Mention
     * [x] Reply
-    * [ ] Location
+    * [x] Location
   * [ ] Chat types
     * [x] Private
     * [x] Group
