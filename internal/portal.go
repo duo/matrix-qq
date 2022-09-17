@@ -1560,6 +1560,36 @@ func (p *Portal) renderQQMention(sender *User, uin int64) *message.AtElement {
 	return message.NewAt(uin, "@"+strconv.FormatInt(uin, 10))
 }
 
+func (p *Portal) renderQQLocation(latitude, longitude float64) *message.LightAppElement {
+	locationJson := fmt.Sprintf(`
+	{
+		"app": "com.tencent.map",
+		"desc": "地图",
+		"view": "LocationShare",
+		"ver": "0.0.0.1",
+		"prompt": "[应用]地图",
+		"from": 1,
+		"meta": {
+		  "Location.Search": {
+			"id": "12250896297164027526",
+			"name": "Location Share",
+			"address": "Latitude: %.5f Longitude: %.5f",
+			"lat": "%.5f",
+			"lng": "%.5f",
+			"from": "plusPanel"
+		  }
+		},
+		"config": {
+		  "forward": 1,
+		  "autosize": 1,
+		  "type": "card"
+		}
+	}
+	`, latitude, longitude, latitude, longitude)
+
+	return message.NewLightApp(locationJson)
+}
+
 func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 	if err := p.canBridgeFrom(sender); err != nil {
 		return
@@ -1676,6 +1706,13 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			p.log.Warnfln("Failed to upload file to QQ: %v", err)
 			return
 		}
+	case event.MsgLocation:
+		latitude, longitude, err := parseGeoURI(content.GeoURI)
+		if err != nil {
+			p.log.Warnfln("Failed to parse geo uri: %v", err)
+
+		}
+		elems = append(elems, p.renderQQLocation(latitude, longitude))
 	default:
 		p.log.Warnfln("%q not support", content.MsgType)
 		return
@@ -1933,6 +1970,24 @@ func (br *QQBridge) NewPortal(dbPortal *database.Portal) *Portal {
 
 func getAppView(elem *message.LightAppElement) string {
 	return gjson.Get(elem.Content, "view").String()
+}
+
+func parseGeoURI(uri string) (lat, long float64, err error) {
+	if !strings.HasPrefix(uri, "geo:") {
+		err = fmt.Errorf("uri doesn't have geo: prefix")
+		return
+	}
+	// Remove geo: prefix and anything after ;
+	coordinates := strings.Split(strings.TrimPrefix(uri, "geo:"), ";")[0]
+
+	if splitCoordinates := strings.Split(coordinates, ","); len(splitCoordinates) != 2 {
+		err = fmt.Errorf("didn't find exactly two numbers separated by a comma")
+	} else if lat, err = strconv.ParseFloat(splitCoordinates[0], 64); err != nil {
+		err = fmt.Errorf("latitude is not a number: %w", err)
+	} else if long, err = strconv.ParseFloat(splitCoordinates[1], 64); err != nil {
+		err = fmt.Errorf("longitude is not a number: %w", err)
+	}
+	return
 }
 
 func download(url string) ([]byte, *mimetype.MIME, error) {

@@ -3,12 +3,10 @@ A Matrix-QQ puppeting bridge based on [MiraiGo](https://github.com/Mrs4s/MiraiGo
 
 ### Documentation
 
-All setup and usage instructions can refer to [docs.mau.fi]. Some quick links:
-
-[docs.mau.fi]: https://docs.mau.fi/bridges/go/whatsapp/index.html
+Some quick links:
 
 * [Bridge setup](https://docs.mau.fi/bridges/go/setup.html)
-* Basic usage: [Authentication](https://docs.mau.fi/bridges/go/whatsapp/authentication.html)
+* [Docker](https://hub.docker.com/r/lxduo/matrix-qq)
 
 ### Features & roadmap
 
@@ -22,7 +20,7 @@ All setup and usage instructions can refer to [docs.mau.fi]. Some quick links:
     * [x] File
     * [x] Mention
     * [ ] Reply
-    * [ ] Location
+    * [x] Location
   * [x] Chat types
 	* [x] Direct
 	* [x] Room
