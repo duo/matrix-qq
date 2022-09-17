@@ -121,6 +121,7 @@ func fnLoginPassword(ce *WrappedCommandEvent) {
 			return
 		}
 		if res.Success {
+			ce.User.MarkLogin()
 			ce.Reply("Login successful.")
 			return
 		}
@@ -134,6 +135,7 @@ func fnLoginPassword(ce *WrappedCommandEvent) {
 				return
 			}
 			if res.Success {
+				ce.User.MarkLogin()
 				ce.Reply("Login successful.")
 				return
 			}
@@ -220,6 +222,7 @@ func getInput(ce *WrappedCommandEvent) {
 	if err != nil {
 		ce.Reply("Failed to log in: %v", err)
 	} else if res.Success {
+		ce.User.MarkLogin()
 		ce.Reply("Login successful.")
 	} else {
 		ce.Reply("Failed to log in: %d %v", res.Error, res.ErrorMessage)
@@ -356,6 +359,7 @@ func fnLoginToken(ce *WrappedCommandEvent) {
 		ce.User.log.Errorf("Failed to log in:", err)
 		ce.Reply("Failed to log in: %v", err)
 	} else {
+		ce.User.MarkLogin()
 		ce.Reply("Login successful.")
 	}
 }
