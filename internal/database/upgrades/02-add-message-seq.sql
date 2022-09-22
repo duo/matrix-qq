@@ -18,6 +18,7 @@ INSERT INTO
     message_copy (
         chat_uid,
         chat_receiver,
+        msg_seq,
         msg_id,
         mxid,
         sender,
@@ -29,6 +30,7 @@ INSERT INTO
 SELECT
     chat_uid,
     chat_receiver,
+    '0',
     msg_id,
     mxid,
     sender,
