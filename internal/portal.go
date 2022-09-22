@@ -1615,17 +1615,40 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 		return
 	}
 
+	var elems []message.IMessageElement
+
 	replyToID := content.GetReplyTo()
 	var replyMention *message.AtElement
-	// TODO: how to reply?
 	if len(replyToID) > 0 {
 		replyToMsg := p.bridge.DB.Message.GetByMXID(replyToID)
 		if replyToMsg != nil && !replyToMsg.IsFakeMsgID() && replyToMsg.Type == database.MsgNormal {
-			replyMention = p.renderQQMention(sender, replyToMsg.Sender.IntUin())
+			parts := strings.Split(replyToMsg.MsgID, "-")
+			if len(parts) == 2 {
+				replySeq, err := strconv.ParseInt(parts[1], 10, 32)
+				if err != nil {
+					replyMention = p.renderQQMention(sender, replyToMsg.Sender.IntUin())
+				} else {
+					var seq int32
+					if p.Key.UID.IsUser() {
+						seq = int32(uint16(int32(replySeq)))
+					} else {
+						seq = int32(replySeq)
+					}
+					elems = []message.IMessageElement{
+						&message.ReplyElement{
+							ReplySeq: seq,
+							Sender:   replyToMsg.Sender.IntUin(),
+							Time:     int32(replyToMsg.Timestamp.Unix()),
+							Elements: []message.IMessageElement{message.NewText("Reply")}, //TODO:
+						},
+					}
+				}
+			} else {
+				replyMention = p.renderQQMention(sender, replyToMsg.Sender.IntUin())
+			}
 		}
 	}
 
-	var elems []message.IMessageElement
 	switch content.MsgType {
 	case event.MsgText, event.MsgEmote:
 		if replyMention != nil {

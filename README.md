@@ -19,7 +19,7 @@ Some quick links:
 	* [x] Audio
     * [x] File
     * [x] Mention
-    * [ ] Reply
+    * [x] Reply
     * [x] Location
   * [x] Chat types
 	* [x] Direct
@@ -44,7 +44,7 @@ Some quick links:
   * [ ] Message types
     * [x] Text
 	* [x] Image
-	* [ ] Sticker
+	* [x] Sticker
 	* [x] Video
 	* [x] Audio
     * [x] File
@@ -70,8 +70,8 @@ Some quick links:
   * [x] User metadata
     * [x] Name
     * [x] Avatar
-  * [ ] Login types
-	* [ ] Password
+  * [x] Login types
+	* [x] Password
 	* [x] QR code
 
 * Misc
