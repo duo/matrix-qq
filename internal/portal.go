@@ -678,7 +678,7 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 	}
 
 	if len(eventID) != 0 {
-		p.finishHandling(existingMsg, msgID, time.Unix(ts, 0), sender, eventID, database.MsgNormal, converted.Error)
+		p.finishHandling(existingMsg, msgID, time.UnixMilli(ts), sender, eventID, database.MsgNormal, converted.Error)
 	}
 }
 
@@ -1750,7 +1750,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			p.log.Warnfln("Sending event", evt.ID, "to QQ failed")
 		} else {
 			msgID := toMsgID(ret.GroupCode, ret.Id)
-			p.finishHandling(nil, msgID, time.Unix(evt.Timestamp, 0), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
+			p.finishHandling(nil, msgID, time.UnixMilli(evt.Timestamp), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
 		}
 	} else {
 		ret := sender.Client.SendPrivateMessage(target, msg)
@@ -1758,7 +1758,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			p.log.Warnfln("Sending event", evt.ID, "to QQ failed")
 		} else {
 			msgID := toMsgID(ret.Sender.Uin, ret.Id)
-			p.finishHandling(nil, msgID, time.Unix(evt.Timestamp, 0), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
+			p.finishHandling(nil, msgID, time.UnixMilli(evt.Timestamp), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
 		}
 	}
 }
