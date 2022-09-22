@@ -20,17 +20,22 @@ func (mq *MessageQuery) New() *Message {
 
 const (
 	getAllMessagesQuery = `
-		SELECT chat_uid, chat_receiver, msg_id, mxid, sender, timestamp, sent, type, error
+		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
 		FROM message
 		WHERE chat_uid=$1 AND chat_receiver=$2
 	`
-	getMessageByMsgIDQuery = `
-		SELECT chat_uid, chat_receiver, msg_id, mxid, sender, timestamp, sent, type, error
+	getMessageByMsgKeyQuery = `
+		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
 		FROM message
-		WHERE chat_uid=$1 AND chat_receiver=$2 AND msg_id=$3
+		WHERE chat_uid=$1 AND chat_receiver=$2 AND msg_seq=$3 AND msg_id=$4
+	`
+	getMessageByReplyQuery = `
+		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
+		FROM message
+		WHERE chat_uid=$1 AND chat_receiver=$2 AND msg_seq=$3 AND timestamp=$4
 	`
 	getMessageByMXIDQuery = `
-		SELECT chat_uid, chat_receiver, msg_id, mxid, sender, timestamp, sent, type, error
+		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
 		FROM message
 		WHERE mxid=$1
 	`
@@ -50,8 +55,17 @@ func (mq *MessageQuery) GetAll(chat PortalKey) []*Message {
 	return messages
 }
 
-func (mq *MessageQuery) GetByMsgID(chat PortalKey, msgID string) *Message {
-	row := mq.db.QueryRow(getMessageByMsgIDQuery, chat.UID, chat.Receiver, msgID)
+func (mq *MessageQuery) GetByMessageKey(chat PortalKey, key MessageKey) *Message {
+	row := mq.db.QueryRow(getMessageByMsgKeyQuery, chat.UID, chat.Receiver, key.Seq, key.ID)
+	if row == nil {
+		return nil
+	}
+
+	return mq.New().Scan(row)
+}
+
+func (mq *MessageQuery) GetByReply(chat PortalKey, msgSeq string, ts int64) *Message {
+	row := mq.db.QueryRow(getMessageByReplyQuery, chat.UID, chat.Receiver, msgSeq, ts)
 	if row == nil {
 		return nil
 	}

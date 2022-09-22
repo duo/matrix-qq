@@ -35,7 +35,7 @@ type Message struct {
 	log log.Logger
 
 	Chat      PortalKey
-	MsgID     string
+	Key       MessageKey
 	MXID      id.EventID
 	Sender    types.UID
 	Timestamp time.Time
@@ -49,14 +49,14 @@ func (m *Message) IsFakeMXID() bool {
 }
 
 func (m *Message) IsFakeMsgID() bool {
-	return strings.HasPrefix(m.MsgID, "FAKE::") || m.MsgID == string(m.MXID)
+	return strings.HasPrefix(m.Key.ID, "FAKE::") || m.Key.ID == string(m.MXID)
 }
 
 func (m *Message) Scan(row dbutil.Scannable) *Message {
 	var ts int64
 	err := row.Scan(
-		&m.Chat.UID, &m.Chat.Receiver, &m.MsgID, &m.MXID,
-		&m.Sender, &ts, &m.Sent, &m.Type, &m.Error,
+		&m.Chat.UID, &m.Chat.Receiver, &m.Key.Seq, &m.Key.ID,
+		&m.MXID, &m.Sender, &ts, &m.Sent, &m.Type, &m.Error,
 	)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -75,11 +75,11 @@ func (m *Message) Scan(row dbutil.Scannable) *Message {
 func (m *Message) Insert(txn dbutil.Transaction) {
 	query := `
 		INSERT INTO message
-			(chat_uid, chat_receiver, msg_id, mxid, sender, timestamp, sent, type, error)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+			(chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 	args := []interface{}{
-		m.Chat.UID, m.Chat.Receiver, m.MsgID, m.MXID, m.Sender,
-		m.Timestamp.Unix(), m.Sent, m.Type, m.Error,
+		m.Chat.UID, m.Chat.Receiver, m.Key.Seq, m.Key.ID, m.MXID,
+		m.Sender, m.Timestamp.Unix(), m.Sent, m.Type, m.Error,
 	}
 
 	var err error
@@ -89,7 +89,7 @@ func (m *Message) Insert(txn dbutil.Transaction) {
 		_, err = m.db.Exec(query, args...)
 	}
 	if err != nil {
-		m.log.Warnfln("Failed to insert %s %s: %v", m.Chat, m.MsgID, err)
+		m.log.Warnfln("Failed to insert %s %s: %v", m.Chat, m.Key, err)
 	}
 }
 
@@ -100,10 +100,11 @@ func (m *Message) UpdateMXID(txn dbutil.Transaction, mxid id.EventID, newType Me
 
 	query := `
 		UPDATE message
-		SET mxid=$1, type=$2, error=$3 WHERE chat_uid=$4 AND chat_receiver=$5 AND msg_id=$6
+		SET mxid=$1, type=$2, error=$3
+		WHERE chat_uid=$4 AND chat_receiver=$5 AND msg_seq=$6 AND msg_id=$7
 	`
 	args := []interface{}{
-		mxid, newType, newError, m.Chat.UID, m.Chat.Receiver, m.MsgID,
+		mxid, newType, newError, m.Chat.UID, m.Chat.Receiver, m.Key.Seq, m.Key.ID,
 	}
 
 	var err error
@@ -113,20 +114,20 @@ func (m *Message) UpdateMXID(txn dbutil.Transaction, mxid id.EventID, newType Me
 		_, err = m.db.Exec(query, args...)
 	}
 	if err != nil {
-		m.log.Warnfln("Failed to update %s %s: %v", m.Chat, m.MsgID, err)
+		m.log.Warnfln("Failed to update %s %s: %v", m.Chat, m.Key, err)
 	}
 }
 
 func (m *Message) Delete() {
 	query := `
 		DELETE FROM message
-		WHERE chat_uid=$1 AND chat_receiver=$2 AND msg_id=$3
+		WHERE chat_uid=$1 AND chat_receiver=$2 AND msg_seq=$3 AND msg_id=$4
 	`
 	args := []interface{}{
-		m.Chat.UID, m.Chat.Receiver, m.MsgID,
+		m.Chat.UID, m.Chat.Receiver, m.Key.Seq, m.Key.ID,
 	}
 	_, err := m.db.Exec(query, args...)
 	if err != nil {
-		m.log.Warnfln("Failed to delete %s %s: %v", m.Chat, m.MsgID, err)
+		m.log.Warnfln("Failed to delete %s %s: %v", m.Chat, m.Key, err)
 	}
 }

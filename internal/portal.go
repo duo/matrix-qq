@@ -87,8 +87,9 @@ type Portal struct {
 }
 
 type ReplyInfo struct {
-	MessageID string
-	Sender    types.UID
+	ReplySeq int32
+	Time     int32
+	Sender   types.UID
 }
 
 type ConvertedMessage struct {
@@ -219,10 +220,11 @@ func containsSupportedMessage(elems []message.IMessageElement) bool {
 }
 
 func (p *Portal) handleFakeMessage(msg fakeMessage) {
+	msgKey := database.NewFakeKey(msg.ID)
 	if p.isRecentlyHandled(msg.ID, database.MsgNoError) {
 		p.log.Debugfln("Not handling %s (fake): message was recently handled", msg.ID)
 		return
-	} else if existingMsg := p.bridge.DB.Message.GetByMsgID(p.Key, msg.ID); existingMsg != nil {
+	} else if existingMsg := p.bridge.DB.Message.GetByMessageKey(p.Key, msgKey); existingMsg != nil {
 		p.log.Debugfln("Not handling %s (fake): message is duplicate", msg.ID)
 		return
 	}
@@ -245,15 +247,11 @@ func (p *Portal) handleFakeMessage(msg fakeMessage) {
 	if err != nil {
 		p.log.Errorfln("Failed to send %s to Matrix: %v", msg.ID, err)
 	} else {
-		p.finishHandling(nil, msg.ID, msg.Time, msg.Sender, resp.EventID, database.MsgFake, database.MsgNoError)
+		p.finishHandling(nil, msgKey, msg.Time, msg.Sender, resp.EventID, database.MsgFake, database.MsgNoError)
 	}
 }
 
-func toMsgID(code int64, id int32) string {
-	return fmt.Sprintf("%d-%d", code, id)
-}
-
-func (p *Portal) convertQQVideo(source *User, msgID string, elem *message.ShortVideoElement, intent *appservice.IntentAPI) *ConvertedMessage {
+func (p *Portal) convertQQVideo(source *User, msgKey database.MessageKey, elem *message.ShortVideoElement, intent *appservice.IntentAPI) *ConvertedMessage {
 	content := &event.MessageEventContent{
 		MsgType: event.MsgVideo,
 		Info: &event.FileInfo{
@@ -272,7 +270,7 @@ func (p *Portal) convertQQVideo(source *User, msgID string, elem *message.ShortV
 	url := source.Client.GetShortVideoUrl(elem.Uuid, elem.Md5)
 	data, mime, err := download(url)
 	if err != nil {
-		return p.makeMediaBridgeFailureMessage(msgID, errors.New("failed to download video from QQ"), converted)
+		return p.makeMediaBridgeFailureMessage(msgKey, errors.New("failed to download video from QQ"), converted)
 	}
 
 	content.Info.MimeType = mime.String()
@@ -281,18 +279,18 @@ func (p *Portal) convertQQVideo(source *User, msgID string, elem *message.ShortV
 	err = p.uploadMedia(intent, data, content)
 	if err != nil {
 		if errors.Is(err, mautrix.MTooLarge) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("homeserver rejected too large file"), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, errors.New("homeserver rejected too large file"), converted)
 		} else if httpErr, ok := err.(mautrix.HTTPError); ok && httpErr.IsStatus(413) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("proxy rejected too large file"), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, errors.New("proxy rejected too large file"), converted)
 		} else {
-			return p.makeMediaBridgeFailureMessage(msgID, fmt.Errorf("failed to upload media: %w", err), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, fmt.Errorf("failed to upload media: %w", err), converted)
 		}
 	}
 
 	return converted
 }
 
-func (p *Portal) convertQQFile(source *User, msgID string, e *client.OfflineFileEvent, intent *appservice.IntentAPI) *ConvertedMessage {
+func (p *Portal) convertQQFile(source *User, msgKey database.MessageKey, e *client.OfflineFileEvent, intent *appservice.IntentAPI) *ConvertedMessage {
 	content := &event.MessageEventContent{
 		MsgType: event.MsgFile,
 		Info: &event.FileInfo{
@@ -310,7 +308,7 @@ func (p *Portal) convertQQFile(source *User, msgID string, e *client.OfflineFile
 
 	data, mime, err := download(e.DownloadUrl)
 	if err != nil {
-		return p.makeMediaBridgeFailureMessage(msgID, errors.New("failed to download file from QQ"), converted)
+		return p.makeMediaBridgeFailureMessage(msgKey, errors.New("failed to download file from QQ"), converted)
 	}
 
 	content.Info.MimeType = mime.String()
@@ -318,18 +316,18 @@ func (p *Portal) convertQQFile(source *User, msgID string, e *client.OfflineFile
 	err = p.uploadMedia(intent, data, content)
 	if err != nil {
 		if errors.Is(err, mautrix.MTooLarge) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("homeserver rejected too large file"), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, errors.New("homeserver rejected too large file"), converted)
 		} else if httpErr, ok := err.(mautrix.HTTPError); ok && httpErr.IsStatus(413) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("proxy rejected too large file"), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, errors.New("proxy rejected too large file"), converted)
 		} else {
-			return p.makeMediaBridgeFailureMessage(msgID, fmt.Errorf("failed to upload media: %w", err), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, fmt.Errorf("failed to upload media: %w", err), converted)
 		}
 	}
 
 	return converted
 }
 
-func (p *Portal) convertQQGroupFile(source *User, msgID string, elem *message.GroupFileElement, intent *appservice.IntentAPI) *ConvertedMessage {
+func (p *Portal) convertQQGroupFile(source *User, msgKey database.MessageKey, elem *message.GroupFileElement, intent *appservice.IntentAPI) *ConvertedMessage {
 	content := &event.MessageEventContent{
 		MsgType: event.MsgFile,
 		Info: &event.FileInfo{
@@ -348,7 +346,7 @@ func (p *Portal) convertQQGroupFile(source *User, msgID string, elem *message.Gr
 	url := source.Client.GetGroupFileUrl(p.Key.UID.IntUin(), elem.Path, elem.Busid)
 	data, mime, err := download(url)
 	if err != nil {
-		return p.makeMediaBridgeFailureMessage(msgID, errors.New("failed to download group file from QQ"), converted)
+		return p.makeMediaBridgeFailureMessage(msgKey, errors.New("failed to download group file from QQ"), converted)
 	}
 
 	content.Info.MimeType = mime.String()
@@ -356,18 +354,18 @@ func (p *Portal) convertQQGroupFile(source *User, msgID string, elem *message.Gr
 	err = p.uploadMedia(intent, data, content)
 	if err != nil {
 		if errors.Is(err, mautrix.MTooLarge) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("homeserver rejected too large file"), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, errors.New("homeserver rejected too large file"), converted)
 		} else if httpErr, ok := err.(mautrix.HTTPError); ok && httpErr.IsStatus(413) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("proxy rejected too large file"), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, errors.New("proxy rejected too large file"), converted)
 		} else {
-			return p.makeMediaBridgeFailureMessage(msgID, fmt.Errorf("failed to upload media: %w", err), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, fmt.Errorf("failed to upload media: %w", err), converted)
 		}
 	}
 
 	return converted
 }
 
-func (p *Portal) convertQQVoice(source *User, msgID string, elem *message.VoiceElement, intent *appservice.IntentAPI) *ConvertedMessage {
+func (p *Portal) convertQQVoice(source *User, msgKey database.MessageKey, elem *message.VoiceElement, intent *appservice.IntentAPI) *ConvertedMessage {
 	content := &event.MessageEventContent{
 		MsgType: event.MsgAudio,
 		Info: &event.FileInfo{
@@ -385,12 +383,12 @@ func (p *Portal) convertQQVoice(source *User, msgID string, elem *message.VoiceE
 
 	data, _, err := download(elem.Url)
 	if err != nil {
-		return p.makeMediaBridgeFailureMessage(msgID, errors.New("failed to download group file from QQ"), converted)
+		return p.makeMediaBridgeFailureMessage(msgKey, errors.New("failed to download group file from QQ"), converted)
 	}
 
 	oggData, err := convertToOgg(data)
 	if err != nil {
-		return p.makeMediaBridgeFailureMessage(msgID, errors.New("failed to convert silk audio to ogg format"), converted)
+		return p.makeMediaBridgeFailureMessage(msgKey, errors.New("failed to convert silk audio to ogg format"), converted)
 	}
 
 	content.Info.Size = len(oggData)
@@ -398,18 +396,18 @@ func (p *Portal) convertQQVoice(source *User, msgID string, elem *message.VoiceE
 	err = p.uploadMedia(intent, oggData, content)
 	if err != nil {
 		if errors.Is(err, mautrix.MTooLarge) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("homeserver rejected too large file"), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, errors.New("homeserver rejected too large file"), converted)
 		} else if httpErr, ok := err.(mautrix.HTTPError); ok && httpErr.IsStatus(413) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("proxy rejected too large file"), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, errors.New("proxy rejected too large file"), converted)
 		} else {
-			return p.makeMediaBridgeFailureMessage(msgID, fmt.Errorf("failed to upload media: %w", err), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, fmt.Errorf("failed to upload media: %w", err), converted)
 		}
 	}
 
 	return converted
 }
 
-func (p *Portal) convertQQLocation(source *User, msgID string, elem *message.LightAppElement, intent *appservice.IntentAPI) *ConvertedMessage {
+func (p *Portal) convertQQLocation(source *User, msgKey database.MessageKey, elem *message.LightAppElement, intent *appservice.IntentAPI) *ConvertedMessage {
 	name := gjson.Get(elem.Content, "meta.*.name").String()
 	address := gjson.Get(elem.Content, "meta.*.address").String()
 	latitude := gjson.Get(elem.Content, "meta.*.lat").Float()
@@ -432,7 +430,7 @@ func (p *Portal) convertQQLocation(source *User, msgID string, elem *message.Lig
 	}
 }
 
-func (p *Portal) convertQQImage(source *User, msgID string, url string, intent *appservice.IntentAPI) *ConvertedMessage {
+func (p *Portal) convertQQImage(source *User, msgKey database.MessageKey, url string, intent *appservice.IntentAPI) *ConvertedMessage {
 	content := &event.MessageEventContent{
 		MsgType: event.MsgImage,
 		Info: &event.FileInfo{
@@ -450,7 +448,7 @@ func (p *Portal) convertQQImage(source *User, msgID string, url string, intent *
 
 	data, mime, err := download(url)
 	if err != nil {
-		return p.makeMediaBridgeFailureMessage(msgID, errors.New("failed to download image from QQ"), converted)
+		return p.makeMediaBridgeFailureMessage(msgKey, errors.New("failed to download image from QQ"), converted)
 	}
 
 	content.Info.MimeType = mime.String()
@@ -460,11 +458,11 @@ func (p *Portal) convertQQImage(source *User, msgID string, url string, intent *
 	err = p.uploadMedia(intent, data, content)
 	if err != nil {
 		if errors.Is(err, mautrix.MTooLarge) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("homeserver rejected too large file"), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, errors.New("homeserver rejected too large file"), converted)
 		} else if httpErr, ok := err.(mautrix.HTTPError); ok && httpErr.IsStatus(413) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("proxy rejected too large file"), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, errors.New("proxy rejected too large file"), converted)
 		} else {
-			return p.makeMediaBridgeFailureMessage(msgID, fmt.Errorf("failed to upload media: %w", err), converted)
+			return p.makeMediaBridgeFailureMessage(msgKey, fmt.Errorf("failed to upload media: %w", err), converted)
 		}
 	}
 
@@ -517,34 +515,34 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 		return
 	}
 
-	var msgID string
+	var msgKey database.MessageKey
 	var sender types.UID
 	var elems []message.IMessageElement
 	ts := time.Now().UnixMilli()
 
 	switch {
 	case msg.private != nil:
-		msgID = toMsgID(msg.private.Sender.Uin, msg.private.Id)
+		msgKey = database.NewMessageKey(msg.private.Id, msg.private.InternalId)
 		sender = types.NewIntUserUID(msg.private.Sender.Uin)
 		elems = msg.private.Elements
 		ts = int64(msg.private.Time) * 1000
 	case msg.group != nil:
-		msgID = toMsgID(msg.group.GroupCode, msg.group.Id)
+		msgKey = database.NewMessageKey(msg.group.Id, msg.group.InternalId)
 		sender = types.NewIntUserUID(msg.group.Sender.Uin)
 		elems = msg.group.Elements
 		ts = int64(msg.group.Time) * 1000
 	case msg.temp != nil:
-		msgID = toMsgID(msg.temp.GroupCode, msg.temp.Id)
+		msgKey = database.NewPartialKey(int64(msg.temp.Id))
 		sender = types.NewIntUserUID(msg.temp.Sender.Uin)
 		elems = msg.temp.Elements
 	case msg.offline != nil:
-		msgID = toMsgID(msg.offline.Sender, int32(time.Now().Unix()))
+		msgKey = database.NewPartialKey(time.Now().Unix())
 		sender = types.NewIntUserUID(msg.offline.Sender)
 	}
 
-	existingMsg := p.bridge.DB.Message.GetByMsgID(p.Key, msgID)
+	existingMsg := p.bridge.DB.Message.GetByMessageKey(p.Key, msgKey)
 	if existingMsg != nil {
-		p.log.Debugfln("Not handling %s: message is duplicate", msgID)
+		p.log.Debugfln("Not handling %s: message is duplicate", msgKey)
 		return
 	}
 
@@ -552,7 +550,7 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 	if intent == nil {
 		return
 	} else if !intent.IsCustomPuppet && p.IsPrivateChat() && sender.Uin == p.Key.Receiver.Uin {
-		p.log.Debugfln("Not handling %s: user doesn't have double puppeting enabled", msgID)
+		p.log.Debugfln("Not handling %s: user doesn't have double puppeting enabled", msgKey)
 		return
 	}
 
@@ -564,7 +562,7 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 	isRichFormat := false
 	isSingleImage := false
 	if msg.offline != nil {
-		converted = p.convertQQFile(source, msgID, msg.offline, intent)
+		converted = p.convertQQFile(source, msgKey, msg.offline, intent)
 	} else {
 		for _, e := range elems {
 			switch v := e.(type) {
@@ -583,7 +581,7 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 			case *message.FriendImageElement:
 				// rich format can't display gif properly...
 				if len(elems) == 1 {
-					converted = p.convertQQImage(source, msgID, v.Url, intent)
+					converted = p.convertQQImage(source, msgKey, v.Url, intent)
 				} else {
 					summary = append(summary, p.renderQQImage(v.Url, intent))
 					isRichFormat = true
@@ -591,35 +589,27 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 			case *message.GroupImageElement:
 				// rich format can't display gif properly...
 				if len(elems) == 1 {
-					converted = p.convertQQImage(source, msgID, v.Url, intent)
+					converted = p.convertQQImage(source, msgKey, v.Url, intent)
 				} else {
 					summary = append(summary, p.renderQQImage(v.Url, intent))
 					isRichFormat = true
 				}
 			case *message.ShortVideoElement:
-				converted = p.convertQQVideo(source, msgID, v, intent)
+				converted = p.convertQQVideo(source, msgKey, v, intent)
 			case *message.GroupFileElement:
-				converted = p.convertQQGroupFile(source, msgID, v, intent)
+				converted = p.convertQQGroupFile(source, msgKey, v, intent)
 			case *message.VoiceElement:
-				converted = p.convertQQVoice(source, msgID, v, intent)
+				converted = p.convertQQVoice(source, msgKey, v, intent)
 			case *message.ReplyElement:
-				var replyMsgID string
-				switch {
-				case msg.private != nil:
-					replyMsgID = toMsgID(msg.private.Sender.Uin, v.ReplySeq)
-				case msg.group != nil:
-					replyMsgID = toMsgID(msg.group.GroupCode, v.ReplySeq)
-				case msg.temp != nil:
-					replyMsgID = toMsgID(msg.temp.GroupCode, v.ReplySeq)
-				}
 				replyInfo = &ReplyInfo{
-					MessageID: replyMsgID,
-					Sender:    types.NewIntUserUID(v.Sender),
+					ReplySeq: v.ReplySeq,
+					Time:     v.Time,
+					Sender:   types.NewIntUserUID(v.Sender),
 				}
 			case *message.LightAppElement:
 				view := getAppView(v)
 				if view == "LocationShare" {
-					converted = p.convertQQLocation(source, msgID, v, intent)
+					converted = p.convertQQLocation(source, msgKey, v, intent)
 				} else {
 					summary = append(summary, p.renderQQLightApp(v))
 					isRichFormat = true
@@ -672,13 +662,13 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 	var eventID id.EventID
 	resp, err := p.sendMessage(converted.Intent, converted.Type, converted.Content, converted.Extra, ts)
 	if err != nil {
-		p.log.Errorfln("Failed to send %s to Matrix: %v", msgID, err)
+		p.log.Errorfln("Failed to send %s to Matrix: %v", msgKey, err)
 	} else {
 		eventID = resp.EventID
 	}
 
 	if len(eventID) != 0 {
-		p.finishHandling(existingMsg, msgID, time.UnixMilli(ts), sender, eventID, database.MsgNormal, converted.Error)
+		p.finishHandling(existingMsg, msgKey, time.UnixMilli(ts), sender, eventID, database.MsgNormal, converted.Error)
 	}
 }
 
@@ -694,11 +684,11 @@ func (p *Portal) isRecentlyHandled(id string, error database.MessageErrorType) b
 	return false
 }
 
-func (p *Portal) markHandled(txn dbutil.Transaction, msg *database.Message, msgID string, ts time.Time, sender types.UID, mxid id.EventID, isSent, recent bool, msgType database.MessageType, errType database.MessageErrorType) *database.Message {
+func (p *Portal) markHandled(txn dbutil.Transaction, msg *database.Message, msgKey database.MessageKey, ts time.Time, sender types.UID, mxid id.EventID, isSent, recent bool, msgType database.MessageType, errType database.MessageErrorType) *database.Message {
 	if msg == nil {
 		msg = p.bridge.DB.Message.New()
 		msg.Chat = p.Key
-		msg.MsgID = msgID
+		msg.Key = msgKey
 		msg.MXID = mxid
 		msg.Timestamp = ts
 		msg.Sender = sender
@@ -715,7 +705,7 @@ func (p *Portal) markHandled(txn dbutil.Transaction, msg *database.Message, msgI
 		index := p.recentlyHandledIndex
 		p.recentlyHandledIndex = (p.recentlyHandledIndex + 1) % recentlyHandledLength
 		p.recentlyHandledLock.Unlock()
-		p.recentlyHandled[index] = recentlyHandledWrapper{msg.MsgID, errType}
+		p.recentlyHandled[index] = recentlyHandledWrapper{msg.Key.String(), errType}
 	}
 
 	return msg
@@ -743,9 +733,9 @@ func (p *Portal) getMessageIntent(user *User, sender types.UID) *appservice.Inte
 	return puppet.IntentFor(p)
 }
 
-func (p *Portal) finishHandling(existing *database.Message, msgId string, ts time.Time, sender types.UID, mxid id.EventID, msgType database.MessageType, errType database.MessageErrorType) {
-	p.markHandled(nil, existing, msgId, ts, sender, mxid, true, true, msgType, errType)
-	p.log.Debugfln("Handled message %s (%s) -> %s", msgId, msgType, mxid)
+func (p *Portal) finishHandling(existing *database.Message, msgKey database.MessageKey, ts time.Time, sender types.UID, mxid id.EventID, msgType database.MessageType, errType database.MessageErrorType) {
+	p.markHandled(nil, existing, msgKey, ts, sender, mxid, true, true, msgType, errType)
+	p.log.Debugfln("Handled message %s (%s) -> %s", msgKey, msgType, mxid)
 }
 
 func (p *Portal) kickExtraUsers(participantMap map[types.UID]bool) {
@@ -1328,7 +1318,8 @@ func (p *Portal) SetReply(content *event.MessageEventContent, replyTo *ReplyInfo
 	if replyTo == nil {
 		return false
 	}
-	message := p.bridge.DB.Message.GetByMsgID(p.Key, replyTo.MessageID)
+	msgSeq := strconv.FormatInt(int64(replyTo.ReplySeq), 10)
+	message := p.bridge.DB.Message.GetByReply(p.Key, msgSeq, int64(replyTo.Time))
 	if message == nil || message.IsFakeMXID() {
 		return false
 	}
@@ -1452,8 +1443,8 @@ func (p *Portal) HandleQQGroupMemberKick(source *User, senderUID types.UID, targ
 	}
 }
 
-func (p *Portal) makeMediaBridgeFailureMessage(msgID string, bridgeErr error, converted *ConvertedMessage) *ConvertedMessage {
-	p.log.Errorfln("Failed to bridge media for %s: %v", msgID, bridgeErr)
+func (p *Portal) makeMediaBridgeFailureMessage(msgKey database.MessageKey, bridgeErr error, converted *ConvertedMessage) *ConvertedMessage {
+	p.log.Errorfln("Failed to bridge media for %s: %v", msgKey, bridgeErr)
 	converted.Type = event.EventMessage
 	converted.Content = &event.MessageEventContent{
 		MsgType: event.MsgNotice,
@@ -1622,29 +1613,28 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 	if len(replyToID) > 0 {
 		replyToMsg := p.bridge.DB.Message.GetByMXID(replyToID)
 		if replyToMsg != nil && !replyToMsg.IsFakeMsgID() && replyToMsg.Type == database.MsgNormal {
-			parts := strings.Split(replyToMsg.MsgID, "-")
-			if len(parts) == 2 {
-				replySeq, err := strconv.ParseInt(parts[1], 10, 32)
-				if err != nil {
-					replyMention = p.renderQQMention(sender, replyToMsg.Sender.IntUin())
-				} else {
-					var seq int32
-					if p.Key.UID.IsUser() {
-						seq = int32(uint16(int32(replySeq)))
-					} else {
-						seq = int32(replySeq)
-					}
-					elems = []message.IMessageElement{
-						&message.ReplyElement{
-							ReplySeq: seq,
-							Sender:   replyToMsg.Sender.IntUin(),
-							Time:     int32(replyToMsg.Timestamp.Unix()),
-							Elements: []message.IMessageElement{message.NewText("Reply")}, //TODO:
-						},
-					}
-				}
-			} else {
+			replySeq, err := strconv.ParseInt(replyToMsg.Key.Seq, 10, 32)
+			if err != nil {
 				replyMention = p.renderQQMention(sender, replyToMsg.Sender.IntUin())
+			} else {
+				var seq int32
+				var groupID int64
+				if p.Key.UID.IsUser() {
+					seq = int32(uint16(int32(replySeq)))
+					groupID = sender.Client.Uin
+				} else {
+					seq = int32(replySeq)
+					groupID = p.Key.UID.IntUin()
+				}
+				elems = []message.IMessageElement{
+					&message.ReplyElement{
+						ReplySeq: seq,
+						GroupID:  groupID,
+						Sender:   replyToMsg.Sender.IntUin(),
+						Time:     int32(replyToMsg.Timestamp.Unix()),
+						Elements: []message.IMessageElement{message.NewText("Reply")}, //TODO:
+					},
+				}
 			}
 		}
 	}
@@ -1749,16 +1739,16 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 		if ret == nil {
 			p.log.Warnfln("Sending event", evt.ID, "to QQ failed")
 		} else {
-			msgID := toMsgID(ret.GroupCode, ret.Id)
-			p.finishHandling(nil, msgID, time.UnixMilli(evt.Timestamp), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
+			msgKey := database.NewMessageKey(ret.Id, ret.InternalId)
+			p.finishHandling(nil, msgKey, time.UnixMilli(evt.Timestamp), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
 		}
 	} else {
 		ret := sender.Client.SendPrivateMessage(target, msg)
 		if ret == nil {
 			p.log.Warnfln("Sending event", evt.ID, "to QQ failed")
 		} else {
-			msgID := toMsgID(ret.Sender.Uin, ret.Id)
-			p.finishHandling(nil, msgID, time.UnixMilli(evt.Timestamp), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
+			msgKey := database.NewMessageKey(ret.Id, ret.InternalId)
+			p.finishHandling(nil, msgKey, time.UnixMilli(evt.Timestamp), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
 		}
 	}
 }
