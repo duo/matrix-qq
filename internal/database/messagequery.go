@@ -32,7 +32,12 @@ const (
 	getMessageByReplyQuery = `
 		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
 		FROM message
-		WHERE chat_uid=$1 AND chat_receiver=$2 AND msg_seq=$3 AND timestamp=$4
+		WHERE chat_uid=$1 AND chat_receiver=$2 AND msg_seq=$3 AND timestamp=$4 LIMIT 1
+	`
+	getMessageByReplyBackQuery = `
+		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
+		FROM message
+		WHERE chat_uid=$1 AND chat_receiver=$2 AND msg_seq=$3 AND timestamp>$4 LIMIT 1
 	`
 	getMessageByMXIDQuery = `
 		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
@@ -70,7 +75,17 @@ func (mq *MessageQuery) GetByReply(chat PortalKey, msgSeq string, ts int64) *Mes
 		return nil
 	}
 
-	return mq.New().Scan(row)
+	msg := mq.New().Scan(row)
+	if msg == nil {
+		// FIXME: how to map the correct one!
+		row = mq.db.QueryRow(getMessageByReplyBackQuery, chat.UID, chat.Receiver, msgSeq, ts-2*60)
+		if row == nil {
+			return nil
+		}
+		msg = mq.New().Scan(row)
+	}
+
+	return msg
 }
 
 func (mq *MessageQuery) GetByMXID(mxid id.EventID) *Message {

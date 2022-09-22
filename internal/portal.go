@@ -1740,7 +1740,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			p.log.Warnfln("Sending event", evt.ID, "to QQ failed")
 		} else {
 			msgKey := database.NewMessageKey(ret.Id, ret.InternalId)
-			p.finishHandling(nil, msgKey, time.UnixMilli(evt.Timestamp), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
+			p.finishHandling(nil, msgKey, time.Unix(int64(ret.Time), 0), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
 		}
 	} else {
 		ret := sender.Client.SendPrivateMessage(target, msg)
@@ -1748,7 +1748,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			p.log.Warnfln("Sending event", evt.ID, "to QQ failed")
 		} else {
 			msgKey := database.NewMessageKey(ret.Id, ret.InternalId)
-			p.finishHandling(nil, msgKey, time.UnixMilli(evt.Timestamp), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
+			p.finishHandling(nil, msgKey, time.Unix(int64(ret.Time), 0), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
 		}
 	}
 }
