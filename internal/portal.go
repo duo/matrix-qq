@@ -1639,6 +1639,10 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 		}
 	}
 
+	if evt.Type == event.EventSticker {
+		content.MsgType = event.MsgImage
+	}
+
 	switch content.MsgType {
 	case event.MsgText, event.MsgEmote:
 		if replyMention != nil {
@@ -1663,7 +1667,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 		} else {
 			elems = append(elems, message.NewText(text))
 		}
-	case event.MsgImage, event.MessageType(event.EventSticker.Type):
+	case event.MsgImage:
 		_, data, err := p.preprocessMatrixMedia(content)
 		if data == nil {
 			p.log.Warnfln("Failed to process matrix media: %v", err)
@@ -1727,7 +1731,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 		}
 		elems = append(elems, p.renderQQLocation(latitude, longitude))
 	default:
-		p.log.Warnfln("%q not support", content.MsgType)
+		p.log.Warnfln("%s not support", content.MsgType)
 		return
 	}
 

@@ -14,7 +14,7 @@ Some quick links:
   * [ ] Message types
     * [x] Text
 	* [x] Image
-	* [ ] Sticker
+	* [x] Sticker
 	* [x] Video
 	* [x] Audio
     * [x] File
