@@ -66,7 +66,7 @@ Some quick links:
   * [ ] Group metadata
     * [x] Name
     * [x] Avatar
-	* [ ] Topic
+	* [x] Topic
   * [x] User metadata
     * [x] Name
     * [x] Avatar

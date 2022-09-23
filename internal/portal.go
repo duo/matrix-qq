@@ -916,14 +916,26 @@ func (p *Portal) UpdateMetadata(user *User, groupInfo *client.GroupInfo, forceAv
 	}
 
 	if groupInfo == nil {
-		p.log.Errorln("Failed to get group info")
+		p.log.Errorln("Failed to get group info", groupInfo.Code)
 		return false
 	}
 
 	p.SyncParticipants(user, groupInfo, forceAvatarSync)
+
 	update := false
 	update = p.UpdateName(groupInfo.Name, types.EmptyUID, false) || update
-	//update = p.UpdateTopic(groupInfo.Topic, types.EmptyUID, false) || update
+
+	groups, err := user.Client.SearchGroupByKeyword(strconv.FormatInt(groupInfo.Code, 10))
+	if err != nil {
+		p.log.Warnln("Failed to search group", groupInfo.Code)
+	} else {
+		for _, group := range groups {
+			if group.Code == groupInfo.Code {
+				update = p.UpdateTopic(group.Memo, types.EmptyUID, false) || update
+				break
+			}
+		}
+	}
 
 	// TODO: restrict message sending and changes
 
