@@ -86,7 +86,7 @@ func (p *Puppet) UpdateAvatar(source *User, forceAvatarSync bool, forcePortalSyn
 }
 
 func (p *Puppet) UpdateName(contact types.ContactInfo, forcePortalSync bool) bool {
-	newName, quality := p.bridge.Config.Bridge.FormatDisplayname(p.UID, contact)
+	newName, quality := p.bridge.Config.Bridge.FormatDisplayname(contact)
 	if (p.Displayname != newName || !p.NameSet) && quality >= p.NameQuality {
 		p.Displayname = newName
 		p.NameQuality = quality
@@ -148,7 +148,7 @@ func (p *Puppet) updatePortalName() {
 func (p *Puppet) SyncContact(source *User, forceAvatarSync bool, reason string) {
 	friend := source.Client.FindFriend(p.UID.IntUin())
 	if friend != nil {
-		p.Sync(source, types.NewContact(friend.Uin, friend.Nickname, friend.Remark), forceAvatarSync, false)
+		p.Sync(source, types.NewContact(friend.Uin, friend.Nickname, ""), forceAvatarSync, false)
 	} else {
 		summary, err := source.Client.GetSummaryInfo(p.UID.IntUin())
 		if err != nil {

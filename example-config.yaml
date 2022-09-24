@@ -66,7 +66,7 @@ bridge:
     # Localpart template of MXIDs for QQ users.
     username_template: _qq_{{.}}
     # Displayname template for QQ users.
-    displayname_template: "{{if .Remark}}{{.Remark}}{{else if .Name}}{{.Name}}{{else}}{{.Uin}}{{end}} (QQ)"
+    displayname_template: "{{if .Name}}{{.Name}}{{else}}{{.Uin}}{{end}} (QQ)"
     # Should the bridge create a space for each logged-in user and add bridged rooms to it?
     # Users who logged in before turning this on should run `!wa sync space` to create and fill the space for the first time.
     personal_filtering_spaces: false

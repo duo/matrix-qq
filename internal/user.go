@@ -191,7 +191,7 @@ func (u *User) doPuppetResync() {
 		u.log.Debugfln("Doing background sync for user: %v", puppet.UID)
 		friend := u.Client.FindFriend(puppet.UID.IntUin())
 		if friend != nil {
-			puppet.Sync(u, types.NewContact(friend.Uin, friend.Nickname, friend.Remark), true, true)
+			puppet.Sync(u, types.NewContact(friend.Uin, friend.Nickname, ""), true, true)
 		} else {
 			summary, err := u.Client.GetSummaryInfo(puppet.UID.IntUin())
 			if err != nil {
@@ -371,6 +371,7 @@ func (u *User) createClient() {
 	u.Client.GroupMuteEvent.Subscribe(u.handleGroupMute)
 	u.Client.GroupMessageRecalledEvent.Subscribe(u.handleGroupRecalled)
 	u.Client.FriendMessageRecalledEvent.Subscribe(u.handleFriendRecalled)
+	u.Client.MemberCardUpdatedEvent.Subscribe(u.handleMemberCardUpdated)
 
 	u.Client.DisconnectedEvent.Subscribe(func(q *client.QQClient, e *client.ClientDisconnectedEvent) {
 		u.reLoginLock.Lock()
@@ -834,6 +835,16 @@ func (u *User) handleFriendRecalled(c *client.QQClient, e *client.FriendMessageR
 	// TODO:
 }
 
+func (u *User) handleMemberCardUpdated(c *client.QQClient, e *client.MemberCardUpdatedEvent) {
+	portal := u.GetPortalByUID(types.NewIntGroupUID(e.Group.Code))
+	if portal == nil || len(portal.MXID) == 0 {
+		u.log.Debugfln("Ignoring member card update in chat with no portal: %s(%d)", e.Group.Name, e.Group.Code)
+		return
+	}
+
+	portal.UpdateRoomNickname(e.Member)
+}
+
 func (u *User) updateAvatar(uid types.UID, avatarID *string, avatarURL *id.ContentURI, avatarSet *bool, log log.Logger, intent *appservice.IntentAPI) bool {
 	var data []byte
 	var err error
@@ -848,6 +859,11 @@ func (u *User) updateAvatar(uid types.UID, avatarID *string, avatarURL *id.Conte
 		return false
 	}
 
+	md5sum := fmt.Sprintf("%x", md5.Sum(data))
+	if md5sum == *avatarID {
+		return false
+	}
+
 	resp, err := reuploadAvatar(intent, data)
 	if err != nil {
 		log.Warnln("Failed to reupload avatar:", err)
@@ -855,8 +871,8 @@ func (u *User) updateAvatar(uid types.UID, avatarID *string, avatarURL *id.Conte
 	}
 
 	*avatarURL = resp
-	*avatarID = "Portrait"
-	*avatarSet = false
+	*avatarID = md5sum
+	*avatarSet = true
 
 	return true
 }
