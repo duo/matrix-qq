@@ -7,6 +7,7 @@ Some quick links:
 
 * [Bridge setup](https://docs.mau.fi/bridges/go/setup.html)
 * [Docker](https://hub.docker.com/r/lxduo/matrix-qq)
+* [Step by Step (Chinese)](https://duo.github.io/posts/matrix-qq-wechat/)
 
 ### Features & roadmap
 
