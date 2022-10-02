@@ -26,7 +26,7 @@ Some quick links:
 	* [x] Direct
 	* [x] Room
   * [ ] Presence
-  * [ ] Redaction
+  * [x] Redaction
   * [ ] Group actions
     * [ ] Join
     * [ ] Invite
@@ -57,7 +57,7 @@ Some quick links:
     * [x] Group
     * [ ] Stranger (unidirectional)
   * [ ] Presence
-  * [ ] Redaction
+  * [x] Redaction
   * [ ] Group actions
     * [ ] Invite
     * [x] Join

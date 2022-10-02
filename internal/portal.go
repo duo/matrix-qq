@@ -736,7 +736,7 @@ func (p *Portal) getMessageIntent(user *User, sender types.UID) *appservice.Inte
 
 func (p *Portal) finishHandling(existing *database.Message, msgKey database.MessageKey, ts time.Time, sender types.UID, mxid id.EventID, msgType database.MessageType, errType database.MessageErrorType, content string) {
 	p.markHandled(nil, existing, msgKey, ts, sender, mxid, true, true, msgType, errType, content)
-	p.log.Debugfln("Handled message %s (%s) -> %s", msgKey, msgType, mxid)
+	p.log.Debugfln("Portal(%s) handled seq(%s) id(%s) %d %s -> %s ", p.Key, msgKey.Seq, msgKey.ID, ts.Unix(), msgType, mxid)
 }
 
 func (p *Portal) kickExtraUsers(participantMap map[types.UID]bool) {
@@ -1353,6 +1353,7 @@ func (p *Portal) SetReply(content *event.MessageEventContent, replyTo *ReplyInfo
 	}
 	msgSeq := strconv.FormatInt(int64(replyTo.ReplySeq), 10)
 	message := p.bridge.DB.Message.GetByReply(p.Key, msgSeq, int64(replyTo.Time))
+	p.log.Debugfln("Portal(%s) query reply seq(%d) %d", p.Key, msgSeq, replyTo.Time)
 	if message == nil || message.IsFakeMXID() {
 		return false
 	}
@@ -1473,6 +1474,26 @@ func (p *Portal) HandleQQGroupMemberKick(source *User, senderUID types.UID, targ
 		sender := p.bridge.GetPuppetByUID(senderUID)
 		senderIntent := sender.IntentFor(p)
 		p.removeUser(false, senderIntent, puppet.MXID, puppet.DefaultIntent())
+	}
+}
+
+func (p *Portal) HandleQQMessageRevoke(source *User, msgSeq int32, ts int64, operator int64) {
+	msg := p.bridge.DB.Message.GetByReply(p.Key, strconv.FormatInt(int64(msgSeq), 10), ts)
+	if msg == nil || msg.IsFakeMsgID() {
+		return
+	}
+
+	intent := p.bridge.GetPuppetByUID(types.NewIntUserUID(operator)).IntentFor(p)
+	_, err := intent.RedactEvent(p.MXID, msg.MXID)
+	if err != nil {
+		if errors.Is(err, mautrix.MForbidden) {
+			_, err = p.MainIntent().RedactEvent(p.MXID, msg.MXID)
+			if err != nil {
+				p.log.Errorln("Failed to redact %s: %v", msg.Key, err)
+			}
+		}
+		//} else {
+		//msg.Delete()
 	}
 }
 
@@ -1798,7 +1819,29 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 }
 
 func (p *Portal) HandleMatrixRedaction(sender *User, evt *event.Event) {
-	// TODO:
+	msg := p.bridge.DB.Message.GetByMXID(evt.Redacts)
+	if msg == nil || msg.IsFakeMsgID() {
+		return
+	}
+
+	if p.IsPrivateChat() {
+		if msg.Sender.Uin != sender.UID.Uin {
+			return
+		}
+
+		if err := sender.Client.RecallPrivateMessage(
+			p.Key.UID.IntUin(), msg.Timestamp.Unix(),
+			int32(msg.Key.IntSeq()), int32(msg.Key.IntID()),
+		); err != nil {
+			p.log.Warnln("Failed to recall %s %s", evt.Redacts, msg.Key)
+		}
+	} else {
+		if err := sender.Client.RecallGroupMessage(
+			p.Key.UID.IntUin(), int32(msg.Key.IntSeq()), int32(msg.Key.IntID()),
+		); err != nil {
+			p.log.Warnln("Failed to recall %s %s", evt.Redacts, msg.Key)
+		}
+	}
 }
 
 func (p *Portal) HandleMatrixReaction(sender *User, evt *event.Event) {

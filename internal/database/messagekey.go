@@ -31,6 +31,16 @@ func NewFakeKey(id string) MessageKey {
 	}
 }
 
+func (mk MessageKey) IntSeq() int64 {
+	number, _ := strconv.ParseInt(mk.Seq, 10, 64)
+	return number
+}
+
+func (mk MessageKey) IntID() int64 {
+	number, _ := strconv.ParseInt(mk.ID, 10, 64)
+	return number
+}
+
 func (mk MessageKey) String() string {
 	return fmt.Sprintf("%s%s%s", mk.Seq, SEP_PORTAL, mk.ID)
 }
