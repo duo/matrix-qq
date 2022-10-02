@@ -736,7 +736,7 @@ func (p *Portal) getMessageIntent(user *User, sender types.UID) *appservice.Inte
 
 func (p *Portal) finishHandling(existing *database.Message, msgKey database.MessageKey, ts time.Time, sender types.UID, mxid id.EventID, msgType database.MessageType, errType database.MessageErrorType, content string) {
 	p.markHandled(nil, existing, msgKey, ts, sender, mxid, true, true, msgType, errType, content)
-	p.log.Debugfln("Portal(%s) handled seq(%s) id(%s) %d %s -> %s ", p.Key, msgKey.Seq, msgKey.ID, ts.Unix(), msgType, mxid)
+	p.log.Debugfln("Portal(%s) handled %s seq(%s) id(%s) ts(%d) -> %s ", p.Key, msgType, msgKey.Seq, msgKey.ID, ts.Unix(), mxid)
 }
 
 func (p *Portal) kickExtraUsers(participantMap map[types.UID]bool) {
@@ -1373,7 +1373,7 @@ func (p *Portal) SetReply(content *event.MessageEventContent, replyTo *ReplyInfo
 	}
 	msgSeq := strconv.FormatInt(int64(replyTo.ReplySeq), 10)
 	message := p.bridge.DB.Message.GetByReply(p.Key, msgSeq, int64(replyTo.Time))
-	p.log.Debugfln("Portal(%s) query reply seq(%d) %d", p.Key, msgSeq, replyTo.Time)
+	p.log.Debugfln("Portal(%s) query message seq(%s) ts(%d)", p.Key, msgSeq, replyTo.Time)
 	if message == nil || message.IsFakeMXID() {
 		return false
 	}
