@@ -20,27 +20,27 @@ func (mq *MessageQuery) New() *Message {
 
 const (
 	getAllMessagesQuery = `
-		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
+		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error, content
 		FROM message
 		WHERE chat_uid=$1 AND chat_receiver=$2
 	`
 	getMessageByMsgKeyQuery = `
-		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
+		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error, content
 		FROM message
 		WHERE chat_uid=$1 AND chat_receiver=$2 AND msg_seq=$3 AND msg_id=$4
 	`
 	getMessageByReplyQuery = `
-		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
+		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error, content
 		FROM message
 		WHERE chat_uid=$1 AND chat_receiver=$2 AND msg_seq=$3 AND timestamp=$4 LIMIT 1
 	`
 	getMessageByReplyBackQuery = `
-		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
+		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error, content
 		FROM message
 		WHERE chat_uid=$1 AND chat_receiver=$2 AND msg_seq=$3 AND timestamp>$4 LIMIT 1
 	`
 	getMessageByMXIDQuery = `
-		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error
+		SELECT chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error, content
 		FROM message
 		WHERE mxid=$1
 	`

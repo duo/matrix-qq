@@ -42,6 +42,7 @@ type Message struct {
 	Sent      bool
 	Type      MessageType
 	Error     MessageErrorType
+	Content   string
 }
 
 func (m *Message) IsFakeMXID() bool {
@@ -54,9 +55,10 @@ func (m *Message) IsFakeMsgID() bool {
 
 func (m *Message) Scan(row dbutil.Scannable) *Message {
 	var ts int64
+	var content sql.NullString
 	err := row.Scan(
 		&m.Chat.UID, &m.Chat.Receiver, &m.Key.Seq, &m.Key.ID,
-		&m.MXID, &m.Sender, &ts, &m.Sent, &m.Type, &m.Error,
+		&m.MXID, &m.Sender, &ts, &m.Sent, &m.Type, &m.Error, &content,
 	)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -68,6 +70,11 @@ func (m *Message) Scan(row dbutil.Scannable) *Message {
 	if ts != 0 {
 		m.Timestamp = time.Unix(ts, 0)
 	}
+	if len(content.String) > 0 {
+		m.Content = content.String
+	} else {
+		m.Content = ""
+	}
 
 	return m
 }
@@ -75,11 +82,11 @@ func (m *Message) Scan(row dbutil.Scannable) *Message {
 func (m *Message) Insert(txn dbutil.Transaction) {
 	query := `
 		INSERT INTO message
-			(chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+			(chat_uid, chat_receiver, msg_seq, msg_id, mxid, sender, timestamp, sent, type, error, content)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	args := []interface{}{
 		m.Chat.UID, m.Chat.Receiver, m.Key.Seq, m.Key.ID, m.MXID,
-		m.Sender, m.Timestamp.Unix(), m.Sent, m.Type, m.Error,
+		m.Sender, m.Timestamp.Unix(), m.Sent, m.Type, m.Error, m.Content,
 	}
 
 	var err error

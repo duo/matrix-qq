@@ -247,7 +247,7 @@ func (p *Portal) handleFakeMessage(msg fakeMessage) {
 	if err != nil {
 		p.log.Errorfln("Failed to send %s to Matrix: %v", msg.ID, err)
 	} else {
-		p.finishHandling(nil, msgKey, msg.Time, msg.Sender, resp.EventID, database.MsgFake, database.MsgNoError)
+		p.finishHandling(nil, msgKey, msg.Time, msg.Sender, resp.EventID, database.MsgFake, database.MsgNoError, "")
 	}
 }
 
@@ -569,7 +569,7 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 			case *message.TextElement:
 				summary = append(summary, v.Content)
 			case *message.FaceElement:
-				summary = append(summary, v.Name)
+				summary = append(summary, "/"+v.Name)
 			case *message.AtElement:
 				summary = append(summary, v.Display)
 				if v.Target == 0 {
@@ -668,7 +668,7 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 	}
 
 	if len(eventID) != 0 {
-		p.finishHandling(existingMsg, msgKey, time.UnixMilli(ts), sender, eventID, database.MsgNormal, converted.Error)
+		p.finishHandling(existingMsg, msgKey, time.UnixMilli(ts), sender, eventID, database.MsgNormal, converted.Error, message.ToReadableString(elems))
 	}
 }
 
@@ -684,7 +684,7 @@ func (p *Portal) isRecentlyHandled(id string, error database.MessageErrorType) b
 	return false
 }
 
-func (p *Portal) markHandled(txn dbutil.Transaction, msg *database.Message, msgKey database.MessageKey, ts time.Time, sender types.UID, mxid id.EventID, isSent, recent bool, msgType database.MessageType, errType database.MessageErrorType) *database.Message {
+func (p *Portal) markHandled(txn dbutil.Transaction, msg *database.Message, msgKey database.MessageKey, ts time.Time, sender types.UID, mxid id.EventID, isSent, recent bool, msgType database.MessageType, errType database.MessageErrorType, content string) *database.Message {
 	if msg == nil {
 		msg = p.bridge.DB.Message.New()
 		msg.Chat = p.Key
@@ -695,6 +695,7 @@ func (p *Portal) markHandled(txn dbutil.Transaction, msg *database.Message, msgK
 		msg.Sent = isSent
 		msg.Type = msgType
 		msg.Error = errType
+		msg.Content = content
 		msg.Insert(txn)
 	} else {
 		msg.UpdateMXID(txn, mxid, msgType, errType)
@@ -733,8 +734,8 @@ func (p *Portal) getMessageIntent(user *User, sender types.UID) *appservice.Inte
 	return puppet.IntentFor(p)
 }
 
-func (p *Portal) finishHandling(existing *database.Message, msgKey database.MessageKey, ts time.Time, sender types.UID, mxid id.EventID, msgType database.MessageType, errType database.MessageErrorType) {
-	p.markHandled(nil, existing, msgKey, ts, sender, mxid, true, true, msgType, errType)
+func (p *Portal) finishHandling(existing *database.Message, msgKey database.MessageKey, ts time.Time, sender types.UID, mxid id.EventID, msgType database.MessageType, errType database.MessageErrorType, content string) {
+	p.markHandled(nil, existing, msgKey, ts, sender, mxid, true, true, msgType, errType, content)
 	p.log.Debugfln("Handled message %s (%s) -> %s", msgKey, msgType, mxid)
 }
 
@@ -1639,6 +1640,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 	}
 
 	var elems []message.IMessageElement
+	var reply *message.ReplyElement
 
 	replyToID := content.GetReplyTo()
 	var replyMention *message.AtElement
@@ -1653,19 +1655,21 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 				var groupID int64
 				if p.Key.UID.IsUser() {
 					seq = int32(uint16(int32(replySeq)))
-					groupID = sender.Client.Uin
+					if replyToMsg.Sender.IntUin() == sender.Client.Uin {
+						groupID = p.Key.UID.IntUin()
+					} else {
+						groupID = sender.Client.Uin
+					}
 				} else {
 					seq = int32(replySeq)
 					groupID = p.Key.UID.IntUin()
 				}
-				elems = []message.IMessageElement{
-					&message.ReplyElement{
-						ReplySeq: seq,
-						GroupID:  groupID,
-						Sender:   replyToMsg.Sender.IntUin(),
-						Time:     int32(replyToMsg.Timestamp.Unix()),
-						Elements: []message.IMessageElement{message.NewText("Reply")}, //TODO:
-					},
+				reply = &message.ReplyElement{
+					ReplySeq: seq,
+					GroupID:  groupID,
+					Sender:   replyToMsg.Sender.IntUin(),
+					Time:     int32(replyToMsg.Timestamp.Unix()),
+					Elements: []message.IMessageElement{message.NewText(replyToMsg.Content)},
 				}
 			}
 		}
@@ -1767,6 +1771,10 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 		return
 	}
 
+	if reply != nil {
+		elems = append(elems, reply)
+	}
+
 	msg := &message.SendingMessage{Elements: elems}
 
 	p.log.Debugln("Sending event", evt.ID, "to QQ")
@@ -1776,7 +1784,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			p.log.Warnfln("Sending event", evt.ID, "to QQ failed")
 		} else {
 			msgKey := database.NewMessageKey(ret.Id, ret.InternalId)
-			p.finishHandling(nil, msgKey, time.Unix(int64(ret.Time), 0), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
+			p.finishHandling(nil, msgKey, time.Unix(int64(ret.Time), 0), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError, message.ToReadableString(elems))
 		}
 	} else {
 		ret := sender.Client.SendPrivateMessage(target, msg)
@@ -1784,7 +1792,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			p.log.Warnfln("Sending event", evt.ID, "to QQ failed")
 		} else {
 			msgKey := database.NewMessageKey(ret.Id, ret.InternalId)
-			p.finishHandling(nil, msgKey, time.Unix(int64(ret.Time), 0), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError)
+			p.finishHandling(nil, msgKey, time.Unix(int64(ret.Time), 0), sender.UID, evt.ID, database.MsgNormal, database.MsgNoError, message.ToReadableString(elems))
 		}
 	}
 }
