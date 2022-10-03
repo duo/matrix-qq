@@ -17,5 +17,5 @@ if [[ ! -f /data/registration.yaml ]]; then
 	exit
 fi
 
-cd /data
-/usr/bin/matrix-qq
+cd /data && exec /usr/bin/matrix-qq
+exit 1
