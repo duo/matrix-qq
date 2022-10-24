@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
 )
 
@@ -27,7 +28,8 @@ func NewPartialKey(seq int64) MessageKey {
 
 func NewFakeKey(id string) MessageKey {
 	return MessageKey{
-		ID: id,
+		Seq: strconv.FormatInt(int64(rand.Intn(9999999999)), 10),
+		ID:  id,
 	}
 }
 

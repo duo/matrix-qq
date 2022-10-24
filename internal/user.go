@@ -828,19 +828,15 @@ func (u *User) handleGroupMute(c *client.QQClient, e *client.GroupMuteEvent) {
 }
 
 func (u *User) handleGroupRecalled(c *client.QQClient, e *client.GroupMessageRecalledEvent) {
-	if u.bridge.Config.Bridge.AllowRedaction {
-		portal := u.GetPortalByUID(types.NewIntGroupUID(e.GroupCode))
-		// FIXME: e.OperatorUin ?
-		portal.HandleQQMessageRevoke(u, e.MessageId, int64(e.Time), e.AuthorUin)
-	}
+	portal := u.GetPortalByUID(types.NewIntGroupUID(e.GroupCode))
+	// FIXME: e.OperatorUin ?
+	portal.HandleQQMessageRevoke(u, e.MessageId, int64(e.Time), e.AuthorUin)
 }
 
 func (u *User) handleFriendRecalled(c *client.QQClient, e *client.FriendMessageRecalledEvent) {
-	if u.bridge.Config.Bridge.AllowRedaction {
-		key := database.NewPortalKey(types.NewIntUserUID(e.FriendUin), types.NewIntUserUID(u.Client.Uin))
-		portal := u.bridge.GetPortalByUID(key)
-		portal.HandleQQMessageRevoke(u, e.MessageId, e.Time, e.FriendUin)
-	}
+	key := database.NewPortalKey(types.NewIntUserUID(e.FriendUin), types.NewIntUserUID(u.Client.Uin))
+	portal := u.bridge.GetPortalByUID(key)
+	portal.HandleQQMessageRevoke(u, e.MessageId, e.Time, e.FriendUin)
 }
 
 func (u *User) handleMemberCardUpdated(c *client.QQClient, e *client.MemberCardUpdatedEvent) {

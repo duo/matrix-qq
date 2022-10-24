@@ -110,6 +110,7 @@ type fakeMessage struct {
 	ID        string
 	Time      time.Time
 	Important bool
+	ReplyTo   *ReplyInfo
 }
 
 type recentlyHandledWrapper struct {
@@ -221,6 +222,7 @@ func containsSupportedMessage(elems []message.IMessageElement) bool {
 
 func (p *Portal) handleFakeMessage(msg fakeMessage) {
 	msgKey := database.NewFakeKey(msg.ID)
+
 	if p.isRecentlyHandled(msg.ID, database.MsgNoError) {
 		p.log.Debugfln("Not handling %s (fake): message was recently handled", msg.ID)
 		return
@@ -239,11 +241,16 @@ func (p *Portal) handleFakeMessage(msg fakeMessage) {
 	if msg.Important {
 		msgType = event.MsgText
 	}
-
-	resp, err := p.sendMessage(intent, event.EventMessage, &event.MessageEventContent{
+	content := &event.MessageEventContent{
 		MsgType: msgType,
 		Body:    msg.Text,
-	}, nil, msg.Time.UnixMilli())
+	}
+
+	if msg.ReplyTo != nil {
+		p.SetReply(content, msg.ReplyTo)
+	}
+
+	resp, err := p.sendMessage(intent, event.EventMessage, content, nil, msg.Time.Unix())
 	if err != nil {
 		p.log.Errorfln("Failed to send %s to Matrix: %v", msg.ID, err)
 	} else {
@@ -1498,7 +1505,27 @@ func (p *Portal) HandleQQGroupMemberKick(source *User, senderUID types.UID, targ
 }
 
 func (p *Portal) HandleQQMessageRevoke(source *User, msgSeq int32, ts int64, operator int64) {
-	msg := p.bridge.DB.Message.GetByReply(p.Key, strconv.FormatInt(int64(msgSeq), 10), ts)
+	msgID := strconv.FormatInt(int64(msgSeq), 10)
+	sender := types.NewIntUserUID(operator)
+
+	if !p.bridge.Config.Bridge.AllowRedaction {
+		p.handleFakeMessage(fakeMessage{
+			Sender:    sender,
+			Text:      fmt.Sprintf("%d recalled a message", operator),
+			ID:        "FAKE::" + msgID,
+			Time:      time.Unix(ts, 0),
+			Important: false,
+			ReplyTo: &ReplyInfo{
+				ReplySeq: msgSeq,
+				Time:     int32(ts),
+				Sender:   sender,
+			},
+		})
+
+		return
+	}
+
+	msg := p.bridge.DB.Message.GetByReply(p.Key, msgID, ts)
 	if msg == nil || msg.IsFakeMsgID() {
 		return
 	}
