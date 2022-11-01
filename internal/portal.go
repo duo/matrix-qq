@@ -567,7 +567,6 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 	var summary []string
 	mentions := make(map[int]string)
 	isRichFormat := false
-	isSingleImage := false
 	if msg.offline != nil {
 		converted = p.convertQQFile(source, msgKey, msg.offline, intent)
 	} else {
@@ -625,7 +624,7 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 		}
 	}
 
-	if !isSingleImage && len(summary) > 0 {
+	if len(summary) > 0 {
 		body := strings.Join(summary, "")
 		content := &event.MessageEventContent{
 			Body:    body,
@@ -649,9 +648,15 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 
 			content.Format = event.FormatHTML
 			content.FormattedBody = sb.String()
-		} else if isRichFormat {
+		}
+		if isRichFormat {
 			content.Format = event.FormatHTML
-			content.FormattedBody = format.RenderMarkdown(body, true, false).FormattedBody
+			if len(content.FormattedBody) > 0 {
+				// FIXME: security risk?
+				content.FormattedBody = format.RenderMarkdown(content.FormattedBody, true, true).FormattedBody
+			} else {
+				content.FormattedBody = format.RenderMarkdown(body, true, false).FormattedBody
+			}
 		}
 
 		converted = &ConvertedMessage{
