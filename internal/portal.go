@@ -250,7 +250,7 @@ func (p *Portal) handleFakeMessage(msg fakeMessage) {
 		p.SetReply(content, msg.ReplyTo)
 	}
 
-	resp, err := p.sendMessage(intent, event.EventMessage, content, nil, msg.Time.Unix())
+	resp, err := p.sendMessage(intent, event.EventMessage, content, nil, msg.Time.UnixMilli())
 	if err != nil {
 		p.log.Errorfln("Failed to send %s to Matrix: %v", msg.ID, err)
 	} else {
