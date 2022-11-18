@@ -212,7 +212,7 @@ func containsSupportedMessage(elems []message.IMessageElement) bool {
 				*message.TextElement, *message.FaceElement, *message.AtElement,
 				*message.FriendImageElement, *message.GroupImageElement, *message.ShortVideoElement,
 				*message.GroupFileElement, *message.VoiceElement, *message.ReplyElement,
-				*message.LightAppElement:
+				*message.LightAppElement, *message.ForwardElement:
 				return true
 			}
 		}
@@ -567,10 +567,10 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 	var summary []string
 	mentions := make(map[int]string)
 	isRichFormat := false
-	if msg.offline != nil {
-		converted = p.convertQQFile(source, msgKey, msg.offline, intent)
-	} else {
-		for _, e := range elems {
+
+	var handleElements func (es []message.IMessageElement)
+	handleElements = func (es []message.IMessageElement) {
+		for _, e := range es {
 			switch v := e.(type) {
 			case *message.TextElement:
 				summary = append(summary, v.Content)
@@ -586,7 +586,7 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 				}
 			case *message.FriendImageElement:
 				// rich format can't display gif properly...
-				if len(elems) == 1 {
+				if len(es) == 1 && len(summary) == 0 {
 					converted = p.convertQQImage(source, msgKey, v.Url, intent)
 				} else {
 					summary = append(summary, p.renderQQImage(v.Url, intent))
@@ -594,7 +594,7 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 				}
 			case *message.GroupImageElement:
 				// rich format can't display gif properly...
-				if len(elems) == 1 {
+				if len(es) == 1 && len(summary) == 0 {
 					converted = p.convertQQImage(source, msgKey, v.Url, intent)
 				} else {
 					summary = append(summary, p.renderQQImage(v.Url, intent))
@@ -620,8 +620,24 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 					summary = append(summary, p.renderQQLightApp(v))
 					isRichFormat = true
 				}
+			case *message.ForwardElement:
+				forward := source.Client.GetForwardMessage(v.ResId)
+				summary = append(summary, "Forward Message: \n")
+				for _, n := range forward.Nodes {
+					summary = append(summary, n.SenderName + ": ")
+					handleElements(n.Message)
+					summary = append(summary, "\n")
+				}
+			default:
+				summary = append(summary, fmt.Sprintf("unknown message: %+v", e))
 			}
 		}
+	}
+
+	if msg.offline != nil {
+		converted = p.convertQQFile(source, msgKey, msg.offline, intent)
+	} else {
+		handleElements(elems)
 	}
 
 	if len(summary) > 0 {
