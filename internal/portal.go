@@ -17,6 +17,7 @@ import (
 
 	"github.com/Mrs4s/MiraiGo/client"
 	"github.com/Mrs4s/MiraiGo/message"
+	"github.com/antchfx/xmlquery"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/tidwall/gjson"
 	"maunium.net/go/mautrix"
@@ -212,7 +213,7 @@ func containsSupportedMessage(elems []message.IMessageElement) bool {
 				*message.TextElement, *message.FaceElement, *message.AtElement,
 				*message.FriendImageElement, *message.GroupImageElement, *message.ShortVideoElement,
 				*message.GroupFileElement, *message.VoiceElement, *message.ReplyElement,
-				*message.LightAppElement:
+				*message.LightAppElement, *message.ForwardElement:
 				return true
 			}
 		}
@@ -437,6 +438,93 @@ func (p *Portal) convertQQLocation(source *User, msgKey database.MessageKey, ele
 	}
 }
 
+func (p *Portal) convertQQForward(source *User, msgKey database.MessageKey, elem *message.ForwardElement, intent *appservice.IntentAPI) *ConvertedMessage {
+	var summary []string
+
+	var handleForward func(nodes []*message.ForwardNode)
+	handleForward = func(nodes []*message.ForwardNode) {
+		summary = append(summary, "<b><i>ForwardMessage:</i></b><br/><ul>")
+
+		for _, node := range nodes {
+			name := node.SenderName
+			if len(name) == 0 {
+				name = strconv.FormatInt(node.SenderId, 10)
+			}
+
+			summary = append(summary, fmt.Sprintf("<li>%s:<br/>", name))
+			for _, e := range node.Message {
+				switch v := e.(type) {
+				case *message.TextElement:
+					summary = append(summary, v.Content)
+				case *message.FaceElement:
+					summary = append(summary, "/"+v.Name)
+				case *message.AtElement:
+					summary = append(summary, v.Display)
+				case *message.FriendImageElement:
+					summary = append(summary, p.renderQQImage(v.Url, intent))
+				case *message.GroupImageElement:
+					summary = append(summary, p.renderQQImage(v.Url, intent))
+				case *message.ForwardMessage:
+					handleForward(v.Nodes)
+				case *message.ServiceElement:
+					if v.SubType != "xml" {
+						continue
+					}
+					doc, err := xmlquery.Parse(strings.NewReader(v.Content))
+					if err != nil {
+						p.log.Warnln("Failed to parse ServiceElement:", err)
+						continue
+					}
+					resNode := xmlquery.FindOne(doc, "/msg/@m_resid")
+					if resNode != nil && len(resNode.InnerText()) != 0 {
+						msg := source.Client.GetForwardMessage(resNode.InnerText())
+						if msg != nil {
+							handleForward(msg.Nodes)
+						}
+					} else {
+						briefNode := xmlquery.FindOne(doc, "/msg/@brief")
+						if briefNode != nil && len(briefNode.InnerText()) != 0 {
+							summary = append(summary, fmt.Sprintf("<b><i>%s:</i></b><br/><ul>", briefNode.InnerText()))
+						} else {
+							summary = append(summary, "<b><i>Items:</i></b><br/><ul>")
+						}
+						for _, title := range xmlquery.Find(doc, "/msg/item/title") {
+							summary = append(summary, "<li>", title.InnerText(), "</li>")
+						}
+						summary = append(summary, "</ul>")
+					}
+				default:
+					summary = append(summary, fmt.Sprintf("[%v]", v.Type()))
+				}
+			}
+
+			summary = append(summary, "</li>")
+		}
+
+		summary = append(summary, "</ul>")
+	}
+
+	msg := source.Client.GetForwardMessage(elem.ResId)
+	if msg != nil {
+		handleForward(msg.Nodes)
+	}
+
+	body := strings.Join(summary, "")
+
+	converted := &ConvertedMessage{
+		Intent: intent,
+		Type:   event.EventMessage,
+		Content: &event.MessageEventContent{
+			MsgType:       event.MsgText,
+			Format:        event.FormatHTML,
+			Body:          body,
+			FormattedBody: format.RenderMarkdown(body, true, true).FormattedBody,
+		},
+	}
+
+	return converted
+}
+
 func (p *Portal) convertQQImage(source *User, msgKey database.MessageKey, url string, intent *appservice.IntentAPI) *ConvertedMessage {
 	content := &event.MessageEventContent{
 		MsgType: event.MsgImage,
@@ -620,6 +708,10 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 					summary = append(summary, p.renderQQLightApp(v))
 					isRichFormat = true
 				}
+			case *message.ForwardElement:
+				converted = p.convertQQForward(source, msgKey, v, intent)
+			default:
+				summary = append(summary, fmt.Sprintf("[%v]", v.Type()))
 			}
 		}
 	}
