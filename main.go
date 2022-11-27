@@ -26,7 +26,7 @@ func main() {
 		Name:         "matrix-qq",
 		URL:          "https://github.com/duo/matrix-qq",
 		Description:  "A Matrix-QQ puppeting bridge.",
-		Version:      "0.0.10",
+		Version:      "0.1.0",
 		ProtocolName: "QQ",
 
 		CryptoPickleKey: "github.com/duo/matrix-qq",
