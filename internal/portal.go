@@ -391,7 +391,7 @@ func (p *Portal) convertQQVoice(source *User, msgKey database.MessageKey, elem *
 
 	data, _, err := download(elem.Url)
 	if err != nil {
-		return p.makeMediaBridgeFailureMessage(msgKey, errors.New("failed to download group file from QQ"), converted)
+		return p.makeMediaBridgeFailureMessage(msgKey, errors.New("failed to download voice from QQ"), converted)
 	}
 
 	oggData, err := convertToOgg(data)
@@ -457,7 +457,7 @@ func (p *Portal) convertQQForward(source *User, msgKey database.MessageKey, elem
 				case *message.TextElement:
 					summary = append(summary, v.Content)
 				case *message.FaceElement:
-					summary = append(summary, "/"+v.Name)
+					summary = append(summary, convertFace(v.Name))
 				case *message.AtElement:
 					summary = append(summary, v.Display)
 				case *message.FriendImageElement:
@@ -493,6 +493,10 @@ func (p *Portal) convertQQForward(source *User, msgKey database.MessageKey, elem
 						}
 						summary = append(summary, "</ul>")
 					}
+				case *message.AnimatedSticker:
+					summary = append(summary, "/"+v.Name)
+				case *message.MarketFaceElement:
+					summary = append(summary, v.Name)
 				default:
 					summary = append(summary, fmt.Sprintf("[%v]", v.Type()))
 				}
@@ -584,7 +588,6 @@ func (p *Portal) renderQQImage(url string, intent *appservice.IntentAPI) string 
 		p.log.Warnfln("failed to upload media: %w", err)
 		return "[图片]"
 	}
-
 	return fmt.Sprintf("![%s](%s)", mime.String(), content.URL)
 }
 
@@ -663,7 +666,7 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 			case *message.TextElement:
 				summary = append(summary, v.Content)
 			case *message.FaceElement:
-				summary = append(summary, "/"+v.Name)
+				summary = append(summary, convertFace(v.Name))
 			case *message.AtElement:
 				summary = append(summary, v.Display)
 				if v.Target == 0 {
@@ -710,6 +713,10 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 				}
 			case *message.ForwardElement:
 				converted = p.convertQQForward(source, msgKey, v, intent)
+			case *message.AnimatedSticker:
+				summary = append(summary, "/"+v.Name)
+			case *message.MarketFaceElement:
+				summary = append(summary, v.Name)
 			default:
 				summary = append(summary, fmt.Sprintf("[%v]", v.Type()))
 			}
