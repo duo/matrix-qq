@@ -591,20 +591,53 @@ func (p *Portal) renderQQImage(url string, intent *appservice.IntentAPI) string 
 	return fmt.Sprintf("![%s](%s)", mime.String(), content.URL)
 }
 
-func (p *Portal) renderQQLightApp(elem *message.LightAppElement) string {
-	title := gjson.Get(elem.Content, "meta.*.title").String()
-	desc := gjson.Get(elem.Content, "meta.*.desc").String()
-	url := gjson.Get(elem.Content, "meta.*.qqdocurl").String()
-	jumpUrl := gjson.Get(elem.Content, "meta.*.jumpUrl").String()
-	if len(url) > 0 {
+func (p *Portal) renderQQLightApp(elem *message.LightAppElement, intent *appservice.IntentAPI) string {
+	if gjson.Get(elem.Content, "app").String() == "com.tencent.mannounce" {
+		return gjson.Get(elem.Content, "prompt").String()
+	}
+	if title := gjson.Get(elem.Content, "meta.albumData.title").String(); len(title) > 0 {
+		albumName := gjson.Get(elem.Content, "meta.albumData.albumName").String()
+		desc := gjson.Get(elem.Content, "meta.albumData.desc").String()
+		prompt := gjson.Get(elem.Content, "prompt").String()
+		var content = fmt.Sprintf("%s@%s\n%s\n", prompt, albumName, desc)
+		pics := gjson.Get(elem.Content, "meta.albumData.pics.#.url").Array()
+		for _, url := range pics {
+			content += p.renderQQImage("https://"+url.String(), intent)
+		}
+		return content
+	}
+	if url := gjson.Get(elem.Content, "meta.*.qqdocurl").String(); len(url) > 0 {
+		title := gjson.Get(elem.Content, "meta.*.title").String()
+		desc := gjson.Get(elem.Content, "meta.*.desc").String()
 		return fmt.Sprintf("%s\n\nvia [%s](%s)", desc, title, url)
 	}
-	if len(jumpUrl) > 0 {
+	if jumpUrl := gjson.Get(elem.Content, "meta.*.jumpUrl").String(); len(jumpUrl) > 0 {
+		title := gjson.Get(elem.Content, "meta.*.title").String()
+		desc := gjson.Get(elem.Content, "meta.*.desc").String()
 		tag := gjson.Get(elem.Content, "meta.*.tag").String()
 		return fmt.Sprintf("**%s**\n\n%s\n\nvia [%s](%s)", title, desc, tag, jumpUrl)
 	}
-
-	return elem.Content
+	url := gjson.Get(elem.Content, "meta.data.*.jumpUrl").String()
+	if len(url) == 0 {
+		url = gjson.Get(elem.Content, "meta.*.jump_url").String()
+	}
+	if len(url) == 0 {
+		url = gjson.Get(elem.Content, "meta.*.jumpURL").String()
+	}
+	if len(url) == 0 {
+		url = gjson.Get(elem.Content, "meta.*.url").String()
+	}
+	if len(url) > 0 {
+		desc := gjson.Get(elem.Content, "desc").String()
+		prompt := gjson.Get(elem.Content, "prompt").String()
+		urlPreview := url
+		if len(urlPreview) >= 30 {
+			urlPreview = urlPreview[0:30] + "..."
+		}
+		return fmt.Sprintf("**%s**\n%s\n\n[%s](%s)", prompt, desc, urlPreview, url)
+	}
+	prompt := gjson.Get(elem.Content, "prompt").String()
+	return fmt.Sprintf("Unsupported LightApp: %s", prompt)
 }
 
 func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
@@ -708,7 +741,10 @@ func (p *Portal) handleQQMessage(source *User, msg PortalMessage) {
 				if view == "LocationShare" {
 					converted = p.convertQQLocation(source, msgKey, v, intent)
 				} else {
-					summary = append(summary, p.renderQQLightApp(v))
+					if len(elems) > 1 {
+						summary = append(summary, "\n\n")
+					}
+					summary = append(summary, p.renderQQLightApp(v, intent))
 					isRichFormat = true
 				}
 			case *message.ForwardElement:
