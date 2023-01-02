@@ -347,11 +347,13 @@ func (u *User) createClient() {
 
 	if len(u.Device) == 0 {
 		client.GenRandomDevice()
+		setClientProtocol(u.bridge.Config.QQ.Protocol)
 		u.Device = string(client.SystemDeviceInfo.ToJson())
 	} else {
 		if err := client.SystemDeviceInfo.ReadJson([]byte(u.Device)); err != nil {
-			u.log.Warnln("failed to load device information: %v", err)
+			u.log.Warnfln("failed to load device information: %v", err)
 			client.GenRandomDevice()
+			setClientProtocol(u.bridge.Config.QQ.Protocol)
 			u.Device = string(client.SystemDeviceInfo.ToJson())
 			u.Token = nil
 		}
@@ -382,7 +384,7 @@ func (u *User) createClient() {
 			return
 		}
 
-		u.log.Warnln("QQ %s is offline: %v", u.UID, e.Message)
+		u.log.Warnfln("QQ %s is offline: %v", u.UID, e.Message)
 		for {
 			time.Sleep(time.Second * time.Duration(5))
 
@@ -1009,4 +1011,23 @@ func (br *QQBridge) NewUser(dbUser *database.User) *User {
 	go user.puppetResyncLoop()
 
 	return user
+}
+
+func setClientProtocol(protocol int) {
+	switch protocol {
+	case 1:
+		client.SystemDeviceInfo.Protocol = client.AndroidPhone
+	case 2:
+		client.SystemDeviceInfo.Protocol = client.AndroidWatch
+	case 3:
+		client.SystemDeviceInfo.Protocol = client.MacOS
+	case 4:
+		client.SystemDeviceInfo.Protocol = client.QiDian
+	case 5:
+		client.SystemDeviceInfo.Protocol = client.IPad
+	case 6:
+		client.SystemDeviceInfo.Protocol = client.AndroidPad
+	default:
+		client.SystemDeviceInfo.Protocol = client.IPad
+	}
 }

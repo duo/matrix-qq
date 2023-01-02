@@ -8,6 +8,10 @@ import (
 type Config struct {
 	*bridgeconfig.BaseConfig `yaml:",inline"`
 
+	QQ struct {
+		Protocol int `yaml:"protocol"`
+	} `yaml:"qq"`
+
 	Bridge BridgeConfig `yaml:"bridge"`
 }
 

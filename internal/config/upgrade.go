@@ -9,6 +9,8 @@ import (
 func DoUpgrade(helper *up.Helper) {
 	bridgeconfig.Upgrader.DoUpgrade(helper)
 
+	helper.Copy(up.Int, "qq", "protocol")
+
 	helper.Copy(up.Str, "bridge", "username_template")
 	helper.Copy(up.Str, "bridge", "displayname_template")
 	helper.Copy(up.Bool, "bridge", "personal_filtering_spaces")
