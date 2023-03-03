@@ -76,6 +76,8 @@ qq:
 
 # Bridge config
 bridge:
+    # Proxy for homeserver connection.
+    hs_proxy:
     # Localpart template of MXIDs for QQ users.
     username_template: _qq_{{.}}
     # Displayname template for QQ users.

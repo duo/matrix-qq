@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -92,6 +94,14 @@ func (br *QQBridge) Init() {
 	br.Formatter = NewFormatter(br)
 
 	br.WebsocketHandler = NewWebsocketCommandHandler(br)
+
+	if br.Config.Bridge.HomeserverProxy != "" {
+		if proxyUrl, err := url.Parse(br.Config.Bridge.HomeserverProxy); err != nil {
+			br.Log.Warnfln("Failed to parse bridge.hs_proxy: %v", err)
+		} else {
+			br.AS.HTTPClient.Transport = &http.Transport{Proxy: http.ProxyURL(proxyUrl)}
+		}
+	}
 }
 
 func (br *QQBridge) Start() {
