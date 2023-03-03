@@ -345,21 +345,23 @@ func (u *User) createClient() {
 	deviceLock.Lock()
 	defer deviceLock.Unlock()
 
+	device := &client.DeviceInfo{}
 	if len(u.Device) == 0 {
-		client.GenRandomDevice()
-		setClientProtocol(u.bridge.Config.QQ.Protocol)
-		u.Device = string(client.SystemDeviceInfo.ToJson())
+		device = client.GenRandomDevice()
+		setClientProtocol(device, u.bridge.Config.QQ.Protocol)
+		u.Device = string(device.ToJson())
 	} else {
-		if err := client.SystemDeviceInfo.ReadJson([]byte(u.Device)); err != nil {
+		if err := device.ReadJson([]byte(u.Device)); err != nil {
 			u.log.Warnfln("failed to load device information: %v", err)
-			client.GenRandomDevice()
-			setClientProtocol(u.bridge.Config.QQ.Protocol)
-			u.Device = string(client.SystemDeviceInfo.ToJson())
+			device = client.GenRandomDevice()
+			setClientProtocol(device, u.bridge.Config.QQ.Protocol)
+			u.Device = string(device.ToJson())
 			u.Token = nil
 		}
 	}
 
 	u.Client = client.NewClientEmpty()
+	u.Client.UseDevice(device)
 	u.Client.PrivateMessageEvent.Subscribe(u.handlePrivateMessage)
 	u.Client.GroupMessageEvent.Subscribe(u.handleGroupMessage)
 	u.Client.SelfPrivateMessageEvent.Subscribe(u.handlePrivateMessage)
@@ -507,6 +509,7 @@ func (u *User) LoginQR() (<-chan *client.QRCodeLoginResponse, error) {
 			if s.State == client.QRCodeConfirmed {
 				r, err := u.Client.QRCodeLogin(s.LoginInfo)
 				if err != nil || !r.Success {
+					u.log.Warnfln("Failed to qr login: %v", err)
 					u.BridgeState.Send(status.BridgeState{StateEvent: status.StateUnknownError, Error: QQConnectionFailed})
 
 					qrChan <- &client.QRCodeLoginResponse{State: 0}
@@ -525,7 +528,6 @@ func (u *User) LoginQR() (<-chan *client.QRCodeLoginResponse, error) {
 
 func (u *User) MarkLogin() {
 	u.UID = types.NewIntUserUID(u.Client.Uin)
-	u.Device = string(client.SystemDeviceInfo.ToJson())
 	u.Token = u.Client.GenToken()
 	u.addToUIDMap()
 	u.Update()
@@ -1013,21 +1015,21 @@ func (br *QQBridge) NewUser(dbUser *database.User) *User {
 	return user
 }
 
-func setClientProtocol(protocol int) {
+func setClientProtocol(device *client.DeviceInfo, protocol int) {
 	switch protocol {
 	case 1:
-		client.SystemDeviceInfo.Protocol = client.AndroidPhone
+		device.Protocol = client.AndroidPhone
 	case 2:
-		client.SystemDeviceInfo.Protocol = client.AndroidWatch
+		device.Protocol = client.AndroidWatch
 	case 3:
-		client.SystemDeviceInfo.Protocol = client.MacOS
+		device.Protocol = client.MacOS
 	case 4:
-		client.SystemDeviceInfo.Protocol = client.QiDian
+		device.Protocol = client.QiDian
 	case 5:
-		client.SystemDeviceInfo.Protocol = client.IPad
+		device.Protocol = client.IPad
 	case 6:
-		client.SystemDeviceInfo.Protocol = client.AndroidPad
+		device.Protocol = client.AndroidPad
 	default:
-		client.SystemDeviceInfo.Protocol = client.IPad
+		device.Protocol = client.AndroidPad
 	}
 }

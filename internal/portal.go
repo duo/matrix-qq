@@ -1850,7 +1850,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 	var elems []message.IMessageElement
 	var reply *message.ReplyElement
 
-	replyToID := content.GetReplyTo()
+	replyToID := content.RelatesTo.GetReplyTo()
 	var replyMention *message.AtElement
 	if len(replyToID) > 0 {
 		replyToMsg := p.bridge.DB.Message.GetByMXID(replyToID)
@@ -1917,7 +1917,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			p.log.Warnfln("Failed to process matrix media: %v", err)
 			return
 		}
-		e, err := sender.Client.UploadImage(info, bytes.NewReader(data), 4)
+		e, err := sender.Client.UploadImage(info, bytes.NewReader(data))
 		if err != nil {
 			p.log.Warnfln("Failed to upload image to QQ: %v", err)
 			return
@@ -1929,7 +1929,8 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			p.log.Warnfln("Failed to process matrix media: %v", err)
 			return
 		}
-		e, err := sender.Client.UploadShortVideo(info, bytes.NewReader(data), bytes.NewReader(smallestImg), 4)
+		// TODO: generate video cover
+		e, err := sender.Client.UploadShortVideo(info, bytes.NewReader(data), bytes.NewReader(smallestImg))
 		if err != nil {
 			p.log.Warnfln("Failed to upload video to QQ: %v", err)
 			return

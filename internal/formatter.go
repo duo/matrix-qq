@@ -26,12 +26,12 @@ func NewFormatter(br *QQBridge) *Formatter {
 				if mxid[0] == '@' {
 					puppet := br.GetPuppetByMXID(id.UserID(mxid))
 					if puppet != nil {
-						elems, ok := ctx[qqElementsContextKey].([]message.IMessageElement)
+						elems, ok := ctx.ReturnData[qqElementsContextKey].([]message.IMessageElement)
 						if ok {
 							content := elems[len(elems)-1].(*message.TextElement).Content
 							modifiedContent := content[:len(content)-len(displayname)]
 							elems[len(elems)-1] = message.NewText(modifiedContent)
-							ctx[qqElementsContextKey] = append(elems, message.NewAt(
+							ctx.ReturnData[qqElementsContextKey] = append(elems, message.NewAt(
 								puppet.UID.IntUin(), "@"+puppet.UID.Uin,
 							))
 						}
@@ -41,16 +41,16 @@ func NewFormatter(br *QQBridge) *Formatter {
 				return mxid
 			},
 			TextConverter: func(text string, ctx format.Context) string {
-				elems, ok := ctx[qqElementsContextKey].([]message.IMessageElement)
+				elems, ok := ctx.ReturnData[qqElementsContextKey].([]message.IMessageElement)
 				if !ok {
-					ctx[qqElementsContextKey] = []message.IMessageElement{message.NewText(text)}
+					ctx.ReturnData[qqElementsContextKey] = []message.IMessageElement{message.NewText(text)}
 				} else {
 					lastElem := elems[len(elems)-1]
 					if e, ok := lastElem.(*message.TextElement); ok {
 						elems[len(elems)-1] = message.NewText(e.Content + text)
-						ctx[qqElementsContextKey] = elems
+						ctx.ReturnData[qqElementsContextKey] = elems
 					} else {
-						ctx[qqElementsContextKey] = append(elems, message.NewText(text))
+						ctx.ReturnData[qqElementsContextKey] = append(elems, message.NewText(text))
 					}
 				}
 				return text
@@ -80,10 +80,10 @@ func (f *Formatter) GetMatrixInfoByUID(roomID id.RoomID, uid types.UID) (id.User
 }
 
 func (f *Formatter) ParseMatrix(html string) []message.IMessageElement {
-	ctx := make(format.Context)
+	ctx := format.NewContext()
 	f.matrixHTMLParser.Parse(html, ctx)
 
-	if elems, ok := ctx[qqElementsContextKey]; ok {
+	if elems, ok := ctx.ReturnData[qqElementsContextKey]; ok {
 		return elems.([]message.IMessageElement)
 	} else {
 		return []message.IMessageElement{}
