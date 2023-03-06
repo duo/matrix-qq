@@ -1,6 +1,6 @@
 module github.com/duo/matrix-qq
 
-go 1.19
+go 1.20
 
 require (
 	github.com/Mrs4s/MiraiGo v0.0.0-20230223093528-5a89d8a9bff2
