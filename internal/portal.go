@@ -394,7 +394,7 @@ func (p *Portal) convertQQVoice(source *User, msgKey database.MessageKey, elem *
 		return p.makeMediaBridgeFailureMessage(msgKey, errors.New("failed to download voice from QQ"), converted)
 	}
 
-	oggData, err := convertToOgg(data)
+	oggData, err := silk2ogg(data)
 	if err != nil {
 		return p.makeMediaBridgeFailureMessage(msgKey, errors.New("failed to convert silk audio to ogg format"), converted)
 	}
@@ -1942,7 +1942,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			p.log.Warnfln("Failed to process matrix media: %v", err)
 			return
 		}
-		silkData, err := convertToSilk(data)
+		silkData, err := ogg2silk(data)
 		if err != nil {
 			p.log.Warnfln("Failed to convert ogg audio to silk format: %s %v", silkData, err)
 			return
