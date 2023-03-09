@@ -286,8 +286,12 @@ func (user *User) sendQR(ce *WrappedCommandEvent, qrCode []byte, prevEvent id.Ev
 	}
 	content := event.MessageEventContent{
 		MsgType: event.MsgImage,
-		Body:    "",
+		Body:    "qrcode",
 		URL:     url.CUString(),
+		Info: &event.FileInfo{
+			MimeType: "image/png",
+			Size:     len(qrCode),
+		},
 	}
 	if len(prevEvent) != 0 {
 		content.SetEdit(prevEvent)
