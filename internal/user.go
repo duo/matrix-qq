@@ -1,8 +1,10 @@
 package internal
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -13,9 +15,11 @@ import (
 
 	"github.com/duo/matrix-qq/internal/database"
 	"github.com/duo/matrix-qq/internal/types"
+	"github.com/tidwall/gjson"
 
 	"github.com/Mrs4s/MiraiGo/client"
 	"github.com/Mrs4s/MiraiGo/message"
+	"github.com/Mrs4s/MiraiGo/warpper"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
 	"maunium.net/go/mautrix/bridge"
@@ -39,6 +43,10 @@ var (
 
 	deviceLock sync.Mutex
 )
+
+func init() {
+	warpper.DandelionEnergy = energy
+}
 
 type resyncQueueItem struct {
 	portal *Portal
@@ -348,17 +356,15 @@ func (u *User) createClient() {
 	device := &client.DeviceInfo{}
 	if len(u.Device) == 0 {
 		device = client.GenRandomDevice()
-		setClientProtocol(device, u.bridge.Config.QQ.Protocol)
-		u.Device = string(device.ToJson())
 	} else {
 		if err := device.ReadJson([]byte(u.Device)); err != nil {
 			u.log.Warnfln("failed to load device information: %v", err)
 			device = client.GenRandomDevice()
-			setClientProtocol(device, u.bridge.Config.QQ.Protocol)
-			u.Device = string(device.ToJson())
 			u.Token = nil
 		}
 	}
+	setClientProtocol(device, u.bridge.Config.QQ.Protocol)
+	u.Device = string(device.ToJson())
 
 	u.Client = client.NewClientEmpty()
 	u.Client.UseDevice(device)
@@ -591,11 +597,12 @@ func (u *User) DeleteConnection() {
 }
 
 func (u *User) DeleteSession() {
+	u.Device = ""
 	u.Token = nil
 	if !u.UID.IsEmpty() {
 		u.UID = types.EmptyUID
-		u.Update()
 	}
+	u.Update()
 }
 
 func (u *User) IsLoggedIn() bool {
@@ -1032,4 +1039,22 @@ func setClientProtocol(device *client.DeviceInfo, protocol int) {
 	default:
 		device.Protocol = client.AndroidPad
 	}
+}
+
+func energy(id string, salt []byte) []byte {
+	// temporary solution
+	response, err := Request{
+		Method: http.MethodPost,
+		URL:    "https://captcha.go-cqhttp.org/sdk/dandelion/energy",
+		Header: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+		Body:   bytes.NewReader([]byte(fmt.Sprintf("id=%s&salt=%s", id, hex.EncodeToString(salt)))),
+	}.Bytes()
+	if err != nil {
+		return nil
+	}
+	sign, err := hex.DecodeString(gjson.GetBytes(response, "result").String())
+	if err != nil {
+		return nil
+	}
+	return sign
 }

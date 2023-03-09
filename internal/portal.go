@@ -588,7 +588,13 @@ func (p *Portal) renderQQImage(url string, intent *appservice.IntentAPI) string 
 		p.log.Warnfln("failed to upload media: %w", err)
 		return "[图片]"
 	}
-	return fmt.Sprintf("![%s](%s)", mime.String(), content.URL)
+
+	var mediaURL = content.URL
+	if content.File != nil {
+		mediaURL = content.File.URL
+	}
+
+	return fmt.Sprintf("![%s](%s)", mime.String(), mediaURL)
 }
 
 func (p *Portal) renderQQLightApp(elem *message.LightAppElement, intent *appservice.IntentAPI) string {
@@ -1741,6 +1747,17 @@ func (p *Portal) uploadMedia(intent *appservice.IntentAPI, data []byte, content 
 	if content.Info.Width == 0 && content.Info.Height == 0 && strings.HasPrefix(content.Info.MimeType, "image/") {
 		cfg, _, _ := image.DecodeConfig(bytes.NewReader(data))
 		content.Info.Width, content.Info.Height = cfg.Width, cfg.Height
+	}
+
+	// This is a hack for bad clients like Element iOS that require a thumbnail (https://github.com/vector-im/element-ios/issues/4004)
+	if strings.HasPrefix(content.Info.MimeType, "image/") && content.Info.ThumbnailInfo == nil {
+		infoCopy := *content.Info
+		content.Info.ThumbnailInfo = &infoCopy
+		if content.File != nil {
+			content.Info.ThumbnailFile = file
+		} else {
+			content.Info.ThumbnailURL = content.URL
+		}
 	}
 
 	return nil

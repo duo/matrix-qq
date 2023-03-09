@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"math/rand"
 	"net/http"
@@ -332,4 +333,57 @@ func RandomStringRange(length int, str string) string {
 		sb.WriteByte(str[rand.Intn(len(str))])
 	}
 	return sb.String()
+}
+
+// Request is a file download request
+type Request struct {
+	Method string
+	URL    string
+	Header map[string]string
+	Limit  int64
+	Body   io.Reader
+}
+
+func (r Request) do() (*http.Response, error) {
+	if r.Method == "" {
+		r.Method = http.MethodGet
+	}
+	req, err := http.NewRequest(r.Method, r.URL, r.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header["User-Agent"] = []string{UserAgent}
+	for k, v := range r.Header {
+		req.Header.Set(k, v)
+	}
+
+	return httpClient.Do(req)
+}
+
+func (r Request) body() (io.ReadCloser, error) {
+	resp, err := r.do()
+	if err != nil {
+		return nil, err
+	}
+
+	limit := r.Limit // check file size limit
+	if limit > 0 && resp.ContentLength > limit {
+		_ = resp.Body.Close()
+		return nil, errors.New("oversize")
+	}
+
+	if strings.Contains(resp.Header.Get("Content-Encoding"), "gzip") {
+		return NewGzipReadCloser(resp.Body)
+	}
+	return resp.Body, err
+}
+
+func (r Request) Bytes() ([]byte, error) {
+	rd, err := r.body()
+	if err != nil {
+		return nil, err
+	}
+	defer rd.Close()
+	return io.ReadAll(rd)
 }

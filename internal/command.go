@@ -407,7 +407,7 @@ var cmdDeleteSession = &commands.FullHandler{
 }
 
 func fnDeleteSession(ce *WrappedCommandEvent) {
-	if ce.User.Token == nil && ce.User.Client == nil {
+	if ce.User.Token == nil && ce.User.Device == "" && ce.User.Client == nil {
 		ce.Reply("Nothing to purge: no session information stored and no active connection.")
 		return
 	}
