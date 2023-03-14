@@ -19,7 +19,7 @@ import (
 
 	"github.com/Mrs4s/MiraiGo/client"
 	"github.com/Mrs4s/MiraiGo/message"
-	"github.com/Mrs4s/MiraiGo/warpper"
+	"github.com/Mrs4s/MiraiGo/wrapper"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
 	"maunium.net/go/mautrix/bridge"
@@ -45,7 +45,7 @@ var (
 )
 
 func init() {
-	warpper.DandelionEnergy = energy
+	wrapper.DandelionEnergy = energy
 }
 
 type resyncQueueItem struct {
@@ -1041,20 +1041,20 @@ func setClientProtocol(device *client.DeviceInfo, protocol int) {
 	}
 }
 
-func energy(id string, salt []byte) []byte {
+func energy(uin uint64, id string, salt []byte) ([]byte, error) {
 	// temporary solution
 	response, err := Request{
 		Method: http.MethodPost,
 		URL:    "https://captcha.go-cqhttp.org/sdk/dandelion/energy",
 		Header: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
-		Body:   bytes.NewReader([]byte(fmt.Sprintf("id=%s&salt=%s", id, hex.EncodeToString(salt)))),
+		Body:   bytes.NewReader([]byte(fmt.Sprintf("uin=%v&id=%s&salt=%s", uin, id, hex.EncodeToString(salt)))),
 	}.Bytes()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	sign, err := hex.DecodeString(gjson.GetBytes(response, "result").String())
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return sign
+	return sign, nil
 }
