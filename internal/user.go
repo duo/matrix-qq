@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/duo/matrix-qq/internal/database"
+	"github.com/duo/matrix-qq/internal/encryption"
 	"github.com/duo/matrix-qq/internal/types"
 	"github.com/tidwall/gjson"
 
@@ -29,6 +30,7 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
+	_ "github.com/duo/matrix-qq/internal/encryption/t544" // side effect
 	log "maunium.net/go/maulogger/v2"
 )
 
@@ -1041,19 +1043,23 @@ func setClientProtocol(device *client.DeviceInfo, protocol int) {
 	}
 }
 
-func energy(uin uint64, id string, salt []byte) ([]byte, error) {
-	// temporary solution
+func energy(uin uint64, id string, appVersion string, salt []byte) ([]byte, error) {
+	if localSigner, ok := encryption.T544Signer[appVersion]; ok {
+		result := localSigner(time.Now().UnixMicro(), salt)
+		return result, nil
+	}
+	signServer := "https://captcha.go-cqhttp.org/sdk/dandelion/energy"
 	response, err := Request{
 		Method: http.MethodPost,
-		URL:    "https://captcha.go-cqhttp.org/sdk/dandelion/energy",
+		URL:    signServer,
 		Header: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
-		Body:   bytes.NewReader([]byte(fmt.Sprintf("uin=%v&id=%s&salt=%s", uin, id, hex.EncodeToString(salt)))),
+		Body:   bytes.NewReader([]byte(fmt.Sprintf("uin=%v&id=%s&salt=%s&version=%s", uin, id, hex.EncodeToString(salt), appVersion))),
 	}.Bytes()
 	if err != nil {
 		return nil, err
 	}
 	sign, err := hex.DecodeString(gjson.GetBytes(response, "result").String())
-	if err != nil {
+	if err != nil || len(sign) == 0 {
 		return nil, err
 	}
 	return sign, nil

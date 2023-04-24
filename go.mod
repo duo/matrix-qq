@@ -3,8 +3,9 @@ module github.com/duo/matrix-qq
 go 1.20
 
 require (
-	github.com/Mrs4s/MiraiGo v0.0.0-20230312172304-71e86b9b3dc4
+	github.com/Mrs4s/MiraiGo v0.0.0-20230405122028-22ff0046638a
 	github.com/antchfx/xmlquery v1.3.15
+	github.com/fumiama/go-base16384 v1.7.0
 	github.com/gabriel-vasile/mimetype v1.4.2
 	github.com/lib/pq v1.10.7
 	github.com/mattn/go-sqlite3 v1.14.16
