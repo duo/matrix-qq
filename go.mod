@@ -3,7 +3,7 @@ module github.com/duo/matrix-qq
 go 1.20
 
 require (
-	github.com/Mrs4s/MiraiGo v0.0.0-20230405122028-22ff0046638a
+	github.com/Mrs4s/MiraiGo v0.0.0-20230605125224-758c7b8efa40
 	github.com/antchfx/xmlquery v1.3.15
 	github.com/fumiama/go-base16384 v1.7.0
 	github.com/gabriel-vasile/mimetype v1.4.2
