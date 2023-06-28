@@ -10,6 +10,7 @@ func DoUpgrade(helper *up.Helper) {
 	bridgeconfig.Upgrader.DoUpgrade(helper)
 
 	helper.Copy(up.Int, "qq", "protocol")
+	helper.Copy(up.Str, "qq", "sign_server")
 
 	helper.Copy(up.Str, "bridge", "hs_proxy")
 	helper.Copy(up.Str, "bridge", "username_template")

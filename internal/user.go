@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/duo/matrix-qq/internal/database"
-	"github.com/duo/matrix-qq/internal/encryption"
 	"github.com/duo/matrix-qq/internal/types"
 	"github.com/tidwall/gjson"
 
@@ -30,7 +29,6 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
-	_ "github.com/duo/matrix-qq/internal/encryption/t544" // side effect
 	log "maunium.net/go/maulogger/v2"
 )
 
@@ -45,10 +43,6 @@ var (
 
 	deviceLock sync.Mutex
 )
-
-func init() {
-	wrapper.DandelionEnergy = energy
-}
 
 type resyncQueueItem struct {
 	portal *Portal
@@ -367,6 +361,15 @@ func (u *User) createClient() {
 	}
 	setClientProtocol(device, u.bridge.Config.QQ.Protocol)
 	u.Device = string(device.ToJson())
+
+	if u.bridge.Config.QQ.SignServer != "" {
+		wrapper.DandelionEnergy = func(uin uint64, id, appVersion string, salt []byte) ([]byte, error) {
+			return energy(u.bridge.Config.QQ.SignServer, uin, id, appVersion, salt)
+		}
+		wrapper.FekitGetSign = func(seq uint64, uin, cmd, qua string, buff []byte) ([]byte, []byte, []byte, error) {
+			return sign(u.bridge.Config.QQ.SignServer, seq, uin, cmd, qua, buff)
+		}
+	}
 
 	u.Client = client.NewClientEmpty()
 	u.Client.UseDevice(device)
@@ -1043,24 +1046,48 @@ func setClientProtocol(device *client.DeviceInfo, protocol int) {
 	}
 }
 
-func energy(uin uint64, id string, appVersion string, salt []byte) ([]byte, error) {
-	if localSigner, ok := encryption.T544Signer[appVersion]; ok {
-		result := localSigner(time.Now().UnixMicro(), salt)
-		return result, nil
+func energy(signServer string, uin uint64, id string, appVersion string, salt []byte) ([]byte, error) {
+	if !strings.HasSuffix(signServer, "/") {
+		signServer += "/"
 	}
-	signServer := "https://captcha.go-cqhttp.org/sdk/dandelion/energy"
+
 	response, err := Request{
-		Method: http.MethodPost,
-		URL:    signServer,
-		Header: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
-		Body:   bytes.NewReader([]byte(fmt.Sprintf("uin=%v&id=%s&salt=%s&version=%s", uin, id, hex.EncodeToString(salt), appVersion))),
+		Method: http.MethodGet,
+		URL:    signServer + "custom_energy" + fmt.Sprintf("?data=%v&salt=%v", id, hex.EncodeToString(salt)),
 	}.Bytes()
 	if err != nil {
 		return nil, err
 	}
-	sign, err := hex.DecodeString(gjson.GetBytes(response, "result").String())
-	if err != nil || len(sign) == 0 {
+
+	data, err := hex.DecodeString(gjson.GetBytes(response, "data").String())
+	if err != nil {
 		return nil, err
 	}
-	return sign, nil
+	if len(data) == 0 {
+		return nil, errors.New("data is empty")
+	}
+
+	return data, nil
+}
+
+func sign(signServer string, seq uint64, uin string, cmd string, qua string, buff []byte) (sign []byte, extra []byte, token []byte, err error) {
+	if !strings.HasSuffix(signServer, "/") {
+		signServer += "/"
+	}
+
+	response, err := Request{
+		Method: http.MethodPost,
+		URL:    signServer + "sign",
+		Header: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+		Body:   bytes.NewReader([]byte(fmt.Sprintf("uin=%v&qua=%s&cmd=%s&seq=%v&buffer=%v", uin, qua, cmd, seq, hex.EncodeToString(buff)))),
+	}.Bytes()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	sign, _ = hex.DecodeString(gjson.GetBytes(response, "data.sign").String())
+	extra, _ = hex.DecodeString(gjson.GetBytes(response, "data.extra").String())
+	token, _ = hex.DecodeString(gjson.GetBytes(response, "data.token").String())
+
+	return sign, extra, token, nil
 }

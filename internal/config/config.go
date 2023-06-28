@@ -9,7 +9,8 @@ type Config struct {
 	*bridgeconfig.BaseConfig `yaml:",inline"`
 
 	QQ struct {
-		Protocol int `yaml:"protocol"`
+		Protocol   int    `yaml:"protocol"`
+		SignServer string `yaml:"sign_server"`
 	} `yaml:"qq"`
 
 	Bridge BridgeConfig `yaml:"bridge"`

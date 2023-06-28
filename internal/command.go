@@ -41,6 +41,7 @@ func (br *QQBridge) RegisterCommands() {
 		cmdReconnect,
 		cmdDisconnect,
 		cmdPing,
+		cmdDeviceInfo,
 		cmdDeletePortal,
 		cmdDeleteAllPortals,
 		cmdList,
@@ -485,6 +486,23 @@ func fnPing(ce *WrappedCommandEvent) {
 		ce.Reply("Logged in as %s, connection to QQ OK (probably)", ce.User.UID.Uin)
 	} else {
 		ce.Reply("You're logged in as %s, but you don't have a QQ connection.", ce.User.UID.Uin)
+	}
+}
+
+var cmdDeviceInfo = &commands.FullHandler{
+	Func: wrapCommand(fnDeviceInfo),
+	Name: "device-info",
+	Help: commands.HelpMeta{
+		Section:     HelpSectionConnectionManagement,
+		Description: "Show your QQ device information.",
+	},
+}
+
+func fnDeviceInfo(ce *WrappedCommandEvent) {
+	if ce.User.Device == "" {
+		ce.Reply("No device information found.")
+	} else {
+		ce.Reply(ce.User.Device)
 	}
 }
 

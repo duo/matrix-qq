@@ -73,6 +73,8 @@ appservice:
 qq:
     # QQ client protocol (1: AndroidPhone, 2: AndroidWatch, 3: MacOS, 4: QiDian, 5: IPad, 6: AndroidPad)
     protocol: 5
+    # Sign Server (https://github.com/fuqiuluo/unidbg-fetch-qsign)
+    sign_server: ""
 
 # Bridge config
 bridge:
