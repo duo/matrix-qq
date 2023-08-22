@@ -72,9 +72,20 @@ appservice:
 # QQ config
 qq:
     # QQ client protocol (1: AndroidPhone, 2: AndroidWatch, 3: MacOS, 4: QiDian, 5: IPad, 6: AndroidPad)
-    protocol: 5
-    # Sign Server (https://github.com/fuqiuluo/unidbg-fetch-qsign)
-    sign_server: ""
+    protocol: 6
+    # Packaget signature
+    sign:
+        # Sign Server (https://github.com/fuqiuluo/unidbg-fetch-qsign)
+        # For example, http://127.0.0.1:8080
+        server: ""
+        # Sign server bearer token
+        bearer: ""
+        # Sign server API key
+        key: "114514"
+        # Sign server version below 1.1.0
+        is_below_110: false
+        # The interval time for scheduled token refreshing (minutes)
+        refresh_interval: 30
 
 # Bridge config
 bridge:

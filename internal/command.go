@@ -393,9 +393,6 @@ func fnLogout(ce *WrappedCommandEvent) {
 			ce.User.log.Warnln("Failed to logout-matrix while logging out of QQ:", err)
 		}
 	}
-	ce.User.Client.Disconnect()
-	ce.User.Client.Release()
-	ce.User.Token = nil
 	ce.User.removeFromUIDMap(status.BridgeState{StateEvent: status.StateLoggedOut})
 	ce.User.DeleteConnection()
 	ce.User.DeleteSession()

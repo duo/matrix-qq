@@ -9,17 +9,20 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/duo/matrix-qq/internal/database"
 	"github.com/duo/matrix-qq/internal/types"
-	"github.com/tidwall/gjson"
 
+	"github.com/Mrs4s/MiraiGo/binary"
 	"github.com/Mrs4s/MiraiGo/client"
 	"github.com/Mrs4s/MiraiGo/message"
-	"github.com/Mrs4s/MiraiGo/wrapper"
+	"github.com/Mrs4s/MiraiGo/utils"
+	"github.com/hashicorp/go-version"
+	"github.com/tidwall/gjson"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
 	"maunium.net/go/mautrix/bridge"
@@ -52,8 +55,10 @@ type resyncQueueItem struct {
 type User struct {
 	*database.User
 
-	Client      *client.QQClient
-	reLoginLock sync.Mutex
+	Client              *client.QQClient
+	DeviceInfo          *client.DeviceInfo
+	reLoginLock         sync.Mutex
+	tokenRefreshStopped chan struct{}
 
 	bridge *QQBridge
 	log    log.Logger
@@ -112,6 +117,13 @@ func (u *User) removeFromUIDMap(state status.BridgeState) {
 	u.bridge.usersLock.Unlock()
 	u.BridgeState.Send(state)
 }
+
+func (u *User) addToUinMap(uin string) {
+	u.bridge.usersLock.Lock()
+	u.bridge.usersByUin[uin] = u
+	u.bridge.usersLock.Unlock()
+}
+
 func (u *User) puppetResyncLoop() {
 	u.nextResync = time.Now().Add(resyncLoopInterval).Add(-time.Duration(rand.Intn(3600)) * time.Second)
 	for {
@@ -333,6 +345,9 @@ func (u *User) failedConnect(err error) {
 	u.log.Warnln("Error connecting to QQ:", err)
 	u.Token = nil
 	u.Update()
+
+	u.stopRefreshSignToken()
+
 	u.Client.Disconnect()
 	u.Client.Release()
 	u.BridgeState.Send(status.BridgeState{
@@ -345,7 +360,7 @@ func (u *User) failedConnect(err error) {
 	u.BridgeState.Send(status.BridgeState{StateEvent: status.StateUnknownError, Error: QQConnectionFailed})
 }
 
-func (u *User) createClient() {
+func (u *User) createClient(uin int64) {
 	deviceLock.Lock()
 	defer deviceLock.Unlock()
 
@@ -361,15 +376,7 @@ func (u *User) createClient() {
 	}
 	setClientProtocol(device, u.bridge.Config.QQ.Protocol)
 	u.Device = string(device.ToJson())
-
-	if u.bridge.Config.QQ.SignServer != "" {
-		wrapper.DandelionEnergy = func(uin uint64, id, appVersion string, salt []byte) ([]byte, error) {
-			return energy(u.bridge.Config.QQ.SignServer, uin, id, appVersion, salt)
-		}
-		wrapper.FekitGetSign = func(seq uint64, uin, cmd, qua string, buff []byte) ([]byte, []byte, []byte, error) {
-			return sign(u.bridge.Config.QQ.SignServer, seq, uin, cmd, qua, buff)
-		}
-	}
+	u.DeviceInfo = device
 
 	u.Client = client.NewClientEmpty()
 	u.Client.UseDevice(device)
@@ -417,6 +424,13 @@ func (u *User) createClient() {
 			}
 		}
 	})
+
+	u.addToUinMap(strconv.FormatInt(uin, 10))
+
+	if u.bridge.Config.QQ.SignConfig.Server != "" {
+		u.bridge.signRegister(uin, device.AndroidId, device.Guid, device.QImei36, u.bridge.Config.QQ.SignConfig.Key)
+		go u.startRefreshSignToken()
+	}
 }
 
 func (u *User) LoginPassword(uin int64, password string) (*client.LoginResponse, error) {
@@ -430,7 +444,7 @@ func (u *User) LoginPassword(uin int64, password string) (*client.LoginResponse,
 	}
 
 	u.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnecting, Error: QQConnecting})
-	u.createClient()
+	u.createClient(uin)
 
 	u.Client.Uin = uin
 	u.Client.PasswordMd5 = md5.Sum([]byte(password))
@@ -465,8 +479,10 @@ func (u *User) LoginToken(encodedDevice, encodedToken string) error {
 	u.Device = string(deviceBytes)
 	u.Token = tokenBytes
 
+	uin := binary.NewReader(u.Token).ReadInt64()
+
 	u.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnecting, Error: QQConnecting})
-	u.createClient()
+	u.createClient(uin)
 
 	if err := u.Client.TokenLogin(u.Token); err != nil {
 		u.failedConnect(err)
@@ -489,7 +505,8 @@ func (u *User) LoginQR() (<-chan *client.QRCodeLoginResponse, error) {
 	}
 
 	u.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnecting, Error: QQConnecting})
-	u.createClient()
+	// FIXME: how to map uin for qr login?
+	u.createClient(0)
 
 	qrChan := make(chan *client.QRCodeLoginResponse, 256)
 
@@ -557,9 +574,11 @@ func (u *User) Connect() bool {
 		return false
 	}
 
+	uin := binary.NewReader(u.Token).ReadInt64()
+
 	u.log.Debugln("Connecting to QQ %s", u.UID)
 	u.BridgeState.Send(status.BridgeState{StateEvent: status.StateConnecting, Error: QQConnecting})
-	u.createClient()
+	u.createClient(uin)
 
 	if err := u.Client.TokenLogin(u.Token); err != nil {
 		u.failedConnect(err)
@@ -590,6 +609,9 @@ func (u *User) unlockedDeleteConnection() {
 	if u.Client == nil {
 		return
 	}
+
+	u.stopRefreshSignToken()
+
 	u.Client.Disconnect()
 	u.Client.Release()
 	u.Client = nil
@@ -897,6 +919,29 @@ func (u *User) updateAvatar(uid types.UID, avatarID *string, avatarURL *id.Conte
 	return true
 }
 
+func (u *User) startRefreshSignToken() {
+	clock := time.NewTicker(time.Duration(u.bridge.Config.QQ.SignConfig.RefreshInterval) * time.Minute)
+	defer clock.Stop()
+
+	for {
+		select {
+		case <-clock.C:
+			if err := u.bridge.signRefreshToken(u.UID.Uin); err != nil {
+				u.log.Warnfln("Failed to refresh token: %v uin: %s", err, u.UID.Uin)
+			}
+		case <-u.tokenRefreshStopped:
+			return
+		}
+	}
+}
+
+func (u *User) stopRefreshSignToken() {
+	select {
+	case u.tokenRefreshStopped <- struct{}{}:
+	default:
+	}
+}
+
 func downloadUserAvatar(user *User, uin string) (data []byte, err error) {
 	avatarSizes := []int{0, 640, 140, 100, 41, 40}
 
@@ -964,6 +1009,13 @@ func (br *QQBridge) GetUserByUID(uid types.UID) *User {
 	return user
 }
 
+func (br *QQBridge) GetUserByUin(uin string) *User {
+	br.usersLock.Lock()
+	defer br.usersLock.Unlock()
+
+	return br.usersByUin[uin]
+}
+
 func (br *QQBridge) GetAllUsers() []*User {
 	br.usersLock.Lock()
 	defer br.usersLock.Unlock()
@@ -1014,7 +1066,8 @@ func (br *QQBridge) NewUser(dbUser *database.User) *User {
 		bridge: br,
 		log:    br.Log.Sub("User").Sub(string(dbUser.MXID)),
 
-		resyncQueue: make(map[types.UID]resyncQueueItem),
+		tokenRefreshStopped: make(chan struct{}),
+		resyncQueue:         make(map[types.UID]resyncQueueItem),
 	}
 
 	user.PermissionLevel = user.bridge.Config.Bridge.Permissions.Get(user.MXID)
@@ -1025,6 +1078,247 @@ func (br *QQBridge) NewUser(dbUser *database.User) *User {
 	go user.puppetResyncLoop()
 
 	return user
+}
+
+func (br *QQBridge) energy(uin uint64, id string, appVersion string, salt []byte) ([]byte, error) {
+	signServer := br.Config.QQ.SignConfig.Server
+
+	headers := make(map[string]string)
+	signServerBearer := br.Config.QQ.SignConfig.Bearer
+	if signServerBearer != "" {
+		headers["Authorization"] = "Bearer " + signServerBearer
+	}
+
+	user := br.GetUserByUin(strconv.FormatInt(int64(uin), 10))
+
+	req := Request{
+		Method: http.MethodGet,
+		Header: headers,
+		URL:    signServer + "custom_energy" + fmt.Sprintf("?data=%v&salt=%v", id, hex.EncodeToString(salt)),
+	}
+
+	// Can't get user by uin when qr login
+	if !br.Config.QQ.SignConfig.IsBelow110 && user != nil {
+		req.URL = signServer + "custom_energy" + fmt.Sprintf("?data=%v&salt=%v&uin=%v&android_id=%v&guid=%v",
+			id, hex.EncodeToString(salt), uin, utils.B2S(user.DeviceInfo.AndroidId), hex.EncodeToString(user.DeviceInfo.Guid))
+	}
+
+	response, err := req.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := hex.DecodeString(gjson.GetBytes(response, "data").String())
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, errors.New("data is empty")
+	}
+
+	return data, nil
+}
+
+func (br *QQBridge) signSubmit(uin string, cmd string, callbackID int64, buffer []byte, t string) {
+	signServer := br.Config.QQ.SignConfig.Server
+
+	buffStr := hex.EncodeToString(buffer)
+	//br.Log.Infofln("Submit sign %v: uin=%v, cmd=%v, callbackID=%v, buffer-end=%v", t, uin, cmd, callbackID, buffStr[len(buffStr)-10:])
+
+	_, err := Request{
+		Method: http.MethodGet,
+		URL: signServer + "submit" + fmt.Sprintf("?uin=%v&cmd=%v&callback_id=%v&buffer=%v",
+			uin, cmd, callbackID, buffStr),
+	}.Bytes()
+	if err != nil {
+		br.Log.Infofln("Failed to submit callback for %s, err: %v", uin, err)
+	}
+}
+
+func (br *QQBridge) signCallback(uin string, results []gjson.Result, t string) {
+	user := br.GetUserByUin(uin)
+
+	if user != nil {
+		for _, result := range results {
+			cmd := result.Get("cmd").String()
+			callbackID := result.Get("callbackId").Int()
+			body, _ := hex.DecodeString(result.Get("body").String())
+			ret, err := user.Client.SendSsoPacket(cmd, body)
+			if err != nil {
+				br.Log.Infofln("Callback error for %s, err: %v", uin, err)
+			}
+			br.signSubmit(uin, cmd, callbackID, ret, t)
+		}
+	}
+}
+
+func (br *QQBridge) signRequset(seq uint64, uin string, cmd string, qua string, buff []byte) (sign []byte, extra []byte, token []byte, err error) {
+	signServer := br.Config.QQ.SignConfig.Server
+
+	headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
+	signServerBearer := br.Config.QQ.SignConfig.Bearer
+	if signServerBearer != "" {
+		headers["Authorization"] = "Bearer " + signServerBearer
+	}
+
+	user := br.GetUserByUin(uin)
+	if user == nil {
+		return nil, nil, nil, errors.New("user(" + uin + ") not found")
+	}
+
+	response, err := Request{
+		Method: http.MethodPost,
+		URL:    signServer + "sign",
+		Header: headers,
+		Body: bytes.NewReader([]byte(fmt.Sprintf("uin=%v&qua=%s&cmd=%s&seq=%v&buffer=%v&android_id=%v&guid=%v",
+			uin, qua, cmd, seq, hex.EncodeToString(buff), utils.B2S(user.DeviceInfo.AndroidId), hex.EncodeToString(user.DeviceInfo.Guid)))),
+	}.Bytes()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	sign, _ = hex.DecodeString(gjson.GetBytes(response, "data.sign").String())
+	extra, _ = hex.DecodeString(gjson.GetBytes(response, "data.extra").String())
+	token, _ = hex.DecodeString(gjson.GetBytes(response, "data.token").String())
+
+	if !br.Config.QQ.SignConfig.IsBelow110 {
+		go br.signCallback(uin, gjson.GetBytes(response, "data.requestCallback").Array(), "sign")
+	}
+
+	return sign, extra, token, nil
+}
+
+func (br *QQBridge) signRegister(uin int64, androidID, guid []byte, qimei36, key string) {
+	if br.Config.QQ.SignConfig.IsBelow110 {
+		return
+	}
+
+	signServer := br.Config.QQ.SignConfig.Server
+
+	resp, err := Request{
+		Method: http.MethodGet,
+		URL: signServer + "register" + fmt.Sprintf("?uin=%v&android_id=%v&guid=%v&qimei36=%v&key=%s",
+			uin, utils.B2S(androidID), hex.EncodeToString(guid), qimei36, key),
+	}.Bytes()
+	if err != nil {
+		br.Log.Warnfln("Failed to register sign instance for %d, err: %d", uin, err)
+		return
+	}
+
+	msg := gjson.GetBytes(resp, "msg")
+	if gjson.GetBytes(resp, "code").Int() != 0 {
+		br.Log.Warnfln("Failed to register sign instance for %d, msg: %v", uin, msg)
+		return
+	}
+
+	br.Log.Infofln("Register sign instance for %d, msg: %v", uin, msg)
+}
+
+func (br *QQBridge) signRefreshToken(uin string) error {
+	signServer := br.Config.QQ.SignConfig.Server
+
+	resp, err := Request{
+		Method: http.MethodGet,
+		URL:    signServer + "request_token" + fmt.Sprintf("?uin=%v", uin),
+	}.Bytes()
+	if err != nil {
+		return err
+	}
+
+	msg := gjson.GetBytes(resp, "msg")
+	if gjson.GetBytes(resp, "code").Int() != 0 {
+		return errors.New(msg.String())
+	}
+
+	go br.signCallback(uin, gjson.GetBytes(resp, "data").Array(), "request token")
+
+	return nil
+}
+
+func (br *QQBridge) sign(seq uint64, uin string, cmd string, qua string, buff []byte) (sign []byte, extra []byte, token []byte, err error) {
+	i := 0
+	for {
+		sign, extra, token, err = br.signRequset(seq, uin, cmd, qua, buff)
+		if err != nil {
+			br.Log.Warnfln("Failed to get sign for %s, err: %v", uin, err)
+		}
+		if i > 0 {
+			break
+		}
+
+		i++
+
+		user := br.GetUserByUin(uin)
+		if !br.Config.QQ.SignConfig.IsBelow110 && user != nil && err == nil && len(sign) == 0 {
+			br.Log.Warnfln("Get empty sign for %s, attempting re-register", uin)
+			err := br.signServerDestroy(uin)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+
+			intUin, _ := strconv.ParseInt(uin, 10, 64)
+			br.signRegister(intUin, user.DeviceInfo.AndroidId, user.DeviceInfo.Guid, user.DeviceInfo.QImei36, br.Config.QQ.SignConfig.Key)
+
+			continue
+		}
+		if !br.Config.QQ.SignConfig.IsBelow110 && len(token) == 0 {
+			if err := br.signRefreshToken(uin); err != nil {
+				br.Log.Warnfln("Failed to refresh token for %s, err: %v", uin, err)
+			} else {
+				br.Log.Warnfln("Refresh token success for %s", uin)
+			}
+			continue
+		}
+		break
+	}
+
+	return sign, extra, token, err
+}
+
+func (br *QQBridge) signServerDestroy(uin string) error {
+	signServer := br.Config.QQ.SignConfig.Server
+
+	signVersion, err := br.signVersion()
+	if err != nil {
+		return err
+	}
+
+	base, _ := version.NewVersion("1.1.6")
+	ver, _ := version.NewVersion(signVersion)
+	if ver.LessThan(base) {
+		return errors.New("unable to call destroy method")
+	}
+
+	resp, err := Request{
+		Method: http.MethodGet,
+		URL:    signServer + "destroy" + fmt.Sprintf("?uin=%v&key=%v", uin, br.Config.QQ.SignConfig.Key),
+	}.Bytes()
+	if err != nil || gjson.GetBytes(resp, "code").Int() != 0 {
+		return err
+	}
+
+	br.Log.Infofln("Destroy sign instance for %s", uin)
+
+	return nil
+}
+
+func (br *QQBridge) signVersion() (version string, err error) {
+	signServer := br.Config.QQ.SignConfig.Server
+
+	resp, err := Request{
+		Method: http.MethodGet,
+		URL:    signServer,
+	}.Bytes()
+
+	if err != nil {
+		return "", err
+	}
+
+	if gjson.GetBytes(resp, "code").Int() == 0 {
+		return gjson.GetBytes(resp, "data.version").String(), nil
+	}
+
+	return "", errors.New("empty version")
 }
 
 func setClientProtocol(device *client.DeviceInfo, protocol int) {
@@ -1044,50 +1338,4 @@ func setClientProtocol(device *client.DeviceInfo, protocol int) {
 	default:
 		device.Protocol = client.AndroidPad
 	}
-}
-
-func energy(signServer string, uin uint64, id string, appVersion string, salt []byte) ([]byte, error) {
-	if !strings.HasSuffix(signServer, "/") {
-		signServer += "/"
-	}
-
-	response, err := Request{
-		Method: http.MethodGet,
-		URL:    signServer + "custom_energy" + fmt.Sprintf("?data=%v&salt=%v", id, hex.EncodeToString(salt)),
-	}.Bytes()
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := hex.DecodeString(gjson.GetBytes(response, "data").String())
-	if err != nil {
-		return nil, err
-	}
-	if len(data) == 0 {
-		return nil, errors.New("data is empty")
-	}
-
-	return data, nil
-}
-
-func sign(signServer string, seq uint64, uin string, cmd string, qua string, buff []byte) (sign []byte, extra []byte, token []byte, err error) {
-	if !strings.HasSuffix(signServer, "/") {
-		signServer += "/"
-	}
-
-	response, err := Request{
-		Method: http.MethodPost,
-		URL:    signServer + "sign",
-		Header: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
-		Body:   bytes.NewReader([]byte(fmt.Sprintf("uin=%v&qua=%s&cmd=%s&seq=%v&buffer=%v", uin, qua, cmd, seq, hex.EncodeToString(buff)))),
-	}.Bytes()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	sign, _ = hex.DecodeString(gjson.GetBytes(response, "data.sign").String())
-	extra, _ = hex.DecodeString(gjson.GetBytes(response, "data.extra").String())
-	token, _ = hex.DecodeString(gjson.GetBytes(response, "data.token").String())
-
-	return sign, extra, token, nil
 }

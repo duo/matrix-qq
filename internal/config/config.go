@@ -9,8 +9,15 @@ type Config struct {
 	*bridgeconfig.BaseConfig `yaml:",inline"`
 
 	QQ struct {
-		Protocol   int    `yaml:"protocol"`
-		SignServer string `yaml:"sign_server"`
+		Protocol int `yaml:"protocol"`
+
+		SignConfig struct {
+			Server          string `yaml:"server"`
+			Bearer          string `yaml:"bearer"`
+			Key             string `yaml:"key"`
+			IsBelow110      bool   `yaml:"is_below_110"`
+			RefreshInterval int    `yaml:"refresh_interval"`
+		} `yaml:"sign"`
 	} `yaml:"qq"`
 
 	Bridge BridgeConfig `yaml:"bridge"`

@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/Mrs4s/MiraiGo/wrapper"
 	"github.com/duo/matrix-qq/internal/config"
 	"github.com/duo/matrix-qq/internal/database"
 	"github.com/duo/matrix-qq/internal/types"
@@ -34,6 +36,7 @@ type QQBridge struct {
 
 	usersByMXID         map[id.UserID]*User
 	usersByUsername     map[string]*User
+	usersByUin          map[string]*User
 	usersLock           sync.Mutex
 	managementRooms     map[id.RoomID]*User
 	portalsByMXID       map[id.RoomID]*Portal
@@ -58,6 +61,7 @@ func NewQQBridge(exampleConfig string) *QQBridge {
 		ExampleConfig:       exampleConfig,
 		usersByMXID:         make(map[id.UserID]*User),
 		usersByUsername:     make(map[string]*User),
+		usersByUin:          make(map[string]*User),
 		managementRooms:     make(map[id.RoomID]*User),
 		portalsByMXID:       make(map[id.RoomID]*Portal),
 		portalsByUID:        make(map[database.PortalKey]*Portal),
@@ -101,6 +105,15 @@ func (br *QQBridge) Init() {
 		} else {
 			br.AS.HTTPClient.Transport = &http.Transport{Proxy: http.ProxyURL(proxyUrl)}
 		}
+	}
+
+	if br.Config.QQ.SignConfig.Server != "" {
+		if !strings.HasSuffix(br.Config.QQ.SignConfig.Server, "/") {
+			br.Config.QQ.SignConfig.Server += "/"
+		}
+
+		wrapper.DandelionEnergy = br.energy
+		wrapper.FekitGetSign = br.sign
 	}
 }
 
@@ -194,12 +207,8 @@ func (br *QQBridge) serverPinger() {
 
 func (br *QQBridge) Stop() {
 	for _, user := range br.usersByUsername {
-		if user.Client == nil {
-			continue
-		}
 		br.Log.Debugln("Disconnecting", user.MXID)
-		user.Client.Disconnect()
-		user.Client.Release()
+		user.unlockedDeleteConnection()
 	}
 
 	br.stopping = true

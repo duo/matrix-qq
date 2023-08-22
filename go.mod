@@ -3,14 +3,15 @@ module github.com/duo/matrix-qq
 go 1.20
 
 require (
-	github.com/Mrs4s/MiraiGo v0.0.0-20230627090859-19e3d172596e
+	github.com/Mrs4s/MiraiGo v0.0.0-20230803152300-e4b6dc62fd76
 	github.com/antchfx/xmlquery v1.3.17
 	github.com/gabriel-vasile/mimetype v1.4.2
+	github.com/hashicorp/go-version v1.6.0
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.17
-	github.com/tidwall/gjson v1.14.4
+	github.com/tidwall/gjson v1.16.0
 	github.com/wdvxdr1123/go-silk v0.0.0-20220304095002-f67345df09ea
-	golang.org/x/image v0.8.0
+	golang.org/x/image v0.11.0
 	maunium.net/go/maulogger/v2 v2.4.1
 	maunium.net/go/mautrix v0.14.0
 )
@@ -40,7 +41,7 @@ require (
 	golang.org/x/net v0.11.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.9.0 // indirect
-	golang.org/x/text v0.10.0 // indirect
+	golang.org/x/text v0.12.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	maunium.net/go/mauflag v1.0.0 // indirect
 	modernc.org/libc v1.24.1 // indirect
