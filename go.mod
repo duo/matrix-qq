@@ -8,7 +8,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.2
 	github.com/hashicorp/go-version v1.6.0
 	github.com/lib/pq v1.10.9
-	github.com/mattn/go-sqlite3 v1.14.17
+	github.com/mattn/go-sqlite3 v1.14.19
 	github.com/tidwall/gjson v1.16.0
 	github.com/wdvxdr1123/go-silk v0.0.0-20220304095002-f67345df09ea
 	golang.org/x/image v0.11.0

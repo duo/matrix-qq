@@ -9,10 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/duo/matrix-qq/internal/types"
-	"github.com/tidwall/gjson"
 
 	"github.com/Mrs4s/MiraiGo/client"
 	"golang.org/x/image/draw"
@@ -129,17 +127,9 @@ func fnLoginPassword(ce *WrappedCommandEvent) {
 
 		switch res.Error {
 		case client.SliderNeededError:
-			ticket := getTicket(ce, res.VerifyUrl)
-			res, err = ce.User.Client.SubmitTicket(ticket)
-			if err != nil {
-				ce.Reply("Failed to log in: %v", err)
-				return
-			}
-			if res.Success {
-				ce.User.MarkLogin()
-				ce.Reply("Login successful.")
-				return
-			}
+			ce.Reply(fmt.Sprintf("Please input ticket. (from %s)", res.VerifyUrl))
+			switchInput(ce, "ticket", nil)
+			return
 		case client.NeedCaptcha:
 			ce.User.sendQR(ce, res.CaptchaImage, "")
 			ce.Reply("Please input captcha.")
@@ -163,35 +153,6 @@ func fnLoginPassword(ce *WrappedCommandEvent) {
 	}
 }
 
-func getTicket(ce *WrappedCommandEvent, u string) (str string) {
-	id := RandomString(8)
-	replyInfo := fmt.Sprintf("Go to %s for verification.", strings.ReplaceAll(u, "https://ssl.captcha.qq.com/template/wireless_mqq_captcha.html?", fmt.Sprintf("https://captcha.go-cqhttp.org/captcha?id=%v&", id)))
-	ce.Reply(replyInfo)
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for count := 120; count > 0; count-- {
-		<-ticker.C
-		str = fetchCaptcha(id)
-		if str != "" {
-			return
-		}
-	}
-	return ""
-}
-
-func fetchCaptcha(id string) string {
-	data, err := GetBytes("https://captcha.go-cqhttp.org/captcha/ticket?id=" + id)
-	if err != nil {
-		// Failed to fetch ticker
-		return ""
-	}
-	g := gjson.ParseBytes(data)
-	if g.Get("ticket").Exists() {
-		return g.Get("ticket").String()
-	}
-	return ""
-}
-
 func switchInput(ce *WrappedCommandEvent, action string, meta interface{}) {
 	ce.User.SetCommandState(&commands.CommandState{
 		Action: action,
@@ -212,6 +173,8 @@ func getInput(ce *WrappedCommandEvent) {
 	var err error
 
 	switch state.Action {
+	case "ticket":
+		res, err = ce.User.Client.SubmitTicket(ce.Args[0])
 	case "captcha":
 		res, err = ce.User.Client.SubmitCaptcha(ce.Args[0], state.Meta.([]byte))
 	case "verify":
