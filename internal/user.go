@@ -226,7 +226,7 @@ func (u *User) ensureInvited(intent *appservice.IntentAPI, roomID id.RoomID, isD
 	}
 	customPuppet := u.bridge.GetPuppetByCustomMXID(u.MXID)
 	if customPuppet != nil && customPuppet.CustomIntent() != nil {
-		extraContent["me.lxduo.qq.will_auto_accept"] = true
+		extraContent["fi.mau.will_auto_accept"] = true
 	}
 	_, err := intent.InviteUser(roomID, &mautrix.ReqInviteUser{UserID: u.MXID}, extraContent)
 	var httpErr mautrix.HTTPError
