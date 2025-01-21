@@ -1,26 +1,20 @@
-FROM golang:1.20-alpine AS builder
+FROM golang:1-alpine3.21 AS builder
 
-RUN apk add --no-cache git ca-certificates build-base olm-dev
+RUN apk add --no-cache git ca-certificates build-base su-exec olm-dev
 
+COPY . /build
 WORKDIR /build
+RUN ./build.sh
 
-COPY ./ .
+FROM alpine:3.21
 
-RUN set -ex \
-	&& cd /build \
-	&& go build -o matrix-qq
+ENV UID=1337 \
+    GID=1337
 
-FROM alpine:latest
-
-RUN apk add --no-cache --update --quiet --no-progress tzdata ffmpeg ca-certificates olm \
-	&& cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
-	&& echo "Asia/Shanghai" > /etc/timezone
+RUN apk add --no-cache ffmpeg su-exec ca-certificates olm bash jq yq-go curl
 
 COPY --from=builder /build/matrix-qq /usr/bin/matrix-qq
-COPY --from=builder /build/example-config.yaml /opt/matrix-qq/example-config.yaml
 COPY --from=builder /build/docker-run.sh /docker-run.sh
-
 VOLUME /data
-WORKDIR /data
 
 CMD ["/docker-run.sh"]

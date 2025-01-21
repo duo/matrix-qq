@@ -1,0 +1,15 @@
+# Displayname template for QQ users.
+#  .Alias - The alias set by me.
+#  .Name - The username set by the user.
+#  .ID - The internal user ID of the user.
+displayname_template: '{{or .Alias .Name "Unknown user"}}'
+
+# Sign servers
+sign_servers:
+  - https://sign.lagrangecore.org/api/sign/30366
+  - https://sign.0w0.ing/api/sign/30366
+
+reconnect:
+  delay: 3
+  max_times: 0 # Unlimit
+  interval: 7
