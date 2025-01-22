@@ -1,12 +1,15 @@
-.vscode
+.idea
 
-.DS_Store
+*.yaml
+!example-config.yaml
+
+*.json
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.bak
 
 vendor/
 
-logs/
-
-config.yaml
-registration.yaml
-matrix-qq.db
-
+/matrix-qq
