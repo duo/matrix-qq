@@ -46,6 +46,8 @@ func (qc *QQClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Matri
 	case qqid.ChatPrivate:
 		if resp, err := qc.Client.SendPrivateMessage(uint32(target), elements); err != nil {
 			return nil, bridgev2.WrapErrorInStatus(err).WithSendNotice(true)
+		} else if resp == nil {
+			return nil, bridgev2.WrapErrorInStatus(fmt.Errorf("sent message return empty respose")).WithSendNotice(true)
 		} else {
 			return &bridgev2.MatrixMessageResponse{
 				DB: &database.Message{

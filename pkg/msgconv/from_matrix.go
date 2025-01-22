@@ -118,6 +118,7 @@ func (mc *MessageConverter) constructMediaMessage(_ context.Context, content *ev
 	case event.MsgVideo:
 		return []message.IMessageElement{message.NewVideo(data, qqid.SmallestImg)}
 	case event.MsgAudio:
+		data, _ := ogg2silk(data)
 		// TODO: ogg to silk
 		return []message.IMessageElement{message.NewRecord(data)}
 	case event.MsgFile:

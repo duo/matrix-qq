@@ -266,8 +266,10 @@ func (mc *MessageConverter) reploadAttachment(ctx context.Context, elem message.
 		fileName = v.FileUUID
 		content.MsgType = event.MsgImage
 	case *message.VoiceElement:
-		// TODO: silk to ogg
 		data, err = qqid.GetBytes(v.URL)
+		if err == nil {
+			data, err = silk2ogg(data)
+		}
 		fileName = v.Name
 		content.MsgType = event.MsgAudio
 		content.MSC3245Voice = &event.MSC3245Voice{}
@@ -330,9 +332,11 @@ func (mc *MessageConverter) addMentions(ctx context.Context, elems []message.IMe
 		}
 	}
 
-	// Remove first reply mention id
+	// Remove first reply mention id (group chat)
 	if _, ok := elems[0].(*message.ReplyElement); ok {
-		mentionedID = mentionedID[1:]
+		if len(mentionedID) > 0 {
+			mentionedID = mentionedID[1:]
+		}
 	}
 
 	if len(mentionedID) == 0 {

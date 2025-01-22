@@ -7,6 +7,7 @@ Some quick links:
 
 * [Bridge setup](https://docs.mau.fi/bridges/go/setup.html)
 * [Docker](https://hub.docker.com/r/lxduo/matrix-qq)
+* [Step by Step (Chinese)](https://duo.github.io/posts/matrix-qq-wechat/)
 
 ### Features & roadmap
 
@@ -44,10 +45,10 @@ Some quick links:
   * [ ] Message types
     * [x] Text
     * [x] Image
-    * [x] Sticker
+    * [ ] Sticker
     * [x] Video
     * [ ] Audio
-    * [ ] File
+    * [x] File
     * [x] Mention
     * [x] Reply
     * [x] Location

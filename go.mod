@@ -9,6 +9,7 @@ require (
 	github.com/antchfx/xmlquery v1.4.3
 	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/hashicorp/golang-lru/v2 v2.0.7
+	github.com/pinwang5776/silk v0.0.0-20241104071310-465b0cd98da5
 	github.com/rs/zerolog v1.33.0
 	github.com/tidwall/gjson v1.18.0
 	go.mau.fi/util v0.8.4

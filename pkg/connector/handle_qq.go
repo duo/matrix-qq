@@ -11,9 +11,12 @@ import (
 )
 
 func (qc *QQClient) handlePrivateMessage(_ *client.QQClient, msg *message.PrivateMessage) {
-	qc.UserLogin.Log.Trace().
-		Any("message", msg).
-		Msg("Receive QQ private message")
+	qc.UserLogin.Log.Trace().Any("message", msg).Msg("Receive QQ private message")
+
+	if len(msg.Elements) == 0 {
+		qc.UserLogin.Log.Warn().Any("message", msg).Msg("Recevie QQ empty private message")
+		return
+	}
 
 	qc.Main.Bridge.QueueRemoteEvent(qc.UserLogin, &QQMessageEvent{
 		Message: &qqid.Message{
@@ -30,9 +33,12 @@ func (qc *QQClient) handlePrivateMessage(_ *client.QQClient, msg *message.Privat
 }
 
 func (qc *QQClient) handleGroupMessage(_ *client.QQClient, msg *message.GroupMessage) {
-	qc.UserLogin.Log.Trace().
-		Any("message", msg).
-		Msg("Receive QQ group message")
+	qc.UserLogin.Log.Trace().Any("message", msg).Msg("Receive QQ group message")
+
+	if len(msg.Elements) == 0 {
+		qc.UserLogin.Log.Warn().Any("message", msg).Msg("Recevie QQ empty group message")
+		return
+	}
 
 	qc.Main.Bridge.QueueRemoteEvent(qc.UserLogin, &QQMessageEvent{
 		Message: &qqid.Message{
@@ -49,9 +55,7 @@ func (qc *QQClient) handleGroupMessage(_ *client.QQClient, msg *message.GroupMes
 }
 
 func (qc *QQClient) handleFriendRecall(_ *client.QQClient, evt *event.FriendRecall) {
-	qc.UserLogin.Log.Trace().
-		Any("event", evt).
-		Msg("Receive QQ friend recall event")
+	qc.UserLogin.Log.Trace().Any("event", evt).Msg("Receive QQ friend recall event")
 
 	qc.Main.Bridge.QueueRemoteEvent(qc.UserLogin, &QQMessageEvent{
 		Message: &qqid.Message{
@@ -68,9 +72,7 @@ func (qc *QQClient) handleFriendRecall(_ *client.QQClient, evt *event.FriendReca
 }
 
 func (qc *QQClient) handleGroupRecall(_ *client.QQClient, evt *event.GroupRecall) {
-	qc.UserLogin.Log.Trace().
-		Any("event", evt).
-		Msg("Receive QQ group recall event")
+	qc.UserLogin.Log.Trace().Any("event", evt).Msg("Receive QQ group recall event")
 
 	qc.Main.Bridge.QueueRemoteEvent(qc.UserLogin, &QQMessageEvent{
 		Message: &qqid.Message{
