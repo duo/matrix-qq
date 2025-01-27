@@ -1,6 +1,9 @@
 # matrix-qq
 A Matrix-QQ puppeting bridge based on [LagrangeGo](https://github.com/LagrangeDev/LagrangeGo) and [mautrix-go](https://github.com/mautrix/go).
 
+### Alternative 
+* [Matrix-Pylon](https://github.com/duo/matrix-pylon) support for agent access using the [OneBot](https://github.com/botuniverse/onebot-11) protocol
+
 ### Documentation
 
 Some quick links:
